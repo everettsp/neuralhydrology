@@ -21,3 +21,5 @@ epochs: 10
 finetune_modules:
 - head
 - lstm
+
+base_run_dir: c:\Users\everett\Documents\GitHub\neuralhydrology\examples\06-Finetuning\runs\cudalstm_531_basins_2501_182111
