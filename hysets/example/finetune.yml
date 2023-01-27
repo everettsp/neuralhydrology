@@ -1,7 +1,8 @@
 # --- Experiment configurations --------------------------------------------------------------------
 
+
 # experiment name, used as folder name
-experiment_name: cudalstm_3_basins_finetuned
+experiment_name: cudalstm_531_basins_finetuned
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
 train_basin_file: finetune_basin.txt
@@ -16,10 +17,8 @@ learning_rate:
     2: 5e-5	
 
 # Number of training epochs
-epochs: 10
+epochs: 3
 
 finetune_modules:
 - head
 - lstm
-
-base_run_dir: c:\Users\everett\Documents\GitHub\neuralhydrology\neuralhydrology\examples\06-Finetuning\runs\cudalstm_3_basins_2401_195400

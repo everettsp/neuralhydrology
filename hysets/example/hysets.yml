@@ -1,0 +1,166 @@
+# --- Experiment configurations --------------------------------------------------------------------
+
+# experiment name, used as folder name
+experiment_name: cudalstm_hysets_limited
+
+# place to store run directory (if empty runs are stored in $cwd$/runs/)
+run_dir:
+
+# files to specify training, validation and test basins (relative to code root or absolute path)
+train_basin_file: hysets_basin_list.txt
+validation_basin_file: hysets_basin_list.txt
+test_basin_file: hysets_basin_list.txt
+
+# training, validation and test time periods (format = 'dd/mm/yyyy')
+train_start_date: "01/10/2006"
+train_end_date: "30/09/2018"
+validation_start_date: "01/10/1982"
+validation_end_date: "30/09/1994"
+test_start_date: "01/10/1994"
+test_end_date: "30/09/2006"
+
+# fixed seed, leave empty to use a random seed
+seed: 123
+
+# which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
+device: cuda:0
+
+# --- Validation configuration ---------------------------------------------------------------------
+
+# specify after how many epochs to perform validation
+validate_every: 1
+
+# specify how many random basins to use for validation
+validate_n_random_basins: 2
+
+# specify which metrics to calculate during validation (see codebase.evaluation.metrics)
+metrics:
+- NSE
+
+# --- Model configuration --------------------------------------------------------------------------
+
+# base model type [lstm, ealstm, cudalstm, embcudalstm, shortcutlstm, dropoutlstm, cudalstminitialh]
+# (has to match the if statement in modelzoo/__init__.py)
+model: cudalstm
+
+# prediction head [regression, mdn, umal]. Define the head specific parameters below
+head: regression
+
+# ----> General settings <----
+
+# Number of cell states of the LSTM
+hidden_size: 128
+
+# Initial bias value of the forget gate
+initial_forget_bias: 3
+
+# Dropout applied to the output of the LSTM
+output_dropout: 0.4
+
+output_activation: linear
+
+# --- Training configuration -----------------------------------------------------------------------
+
+# specify optimizer [Adam, Adadelta]
+optimizer: Adam
+
+# specify loss [MSE, NSE, RMSE, UMALLoss, MDNLoss]
+loss: NSE
+
+# specify learning rates to use starting at specific epochs (0 is the initial learning rate)
+learning_rate:
+    0: 1e-3
+    1: 5e-4
+
+# Mini-batch size
+batch_size: 256
+
+# Number of training epochs
+epochs: 3
+
+# If True, clips norm of gradients
+clip_gradient_norm: 1
+
+# Defines which time steps are used to calculate the loss. Can't be larger than seq_length
+predict_last_n: 1
+
+# Length of the input sequence
+seq_length: 365
+
+# Number of parallel workers used in the data pipeline
+num_workers: 8
+
+# Log the training loss every n steps
+log_interval: 5
+
+# If true, writes logging results into tensorboard file
+log_tensorboard: True
+
+# Save model weights every n epochs
+save_weights_every: 1
+
+# Store the results of the validation to disk
+save_validation_results: True
+
+# --- Data configurations --------------------------------------------------------------------------
+
+dataset: hysets
+
+# Path to CAMELS data set
+data_dir: C:\Users\everett\SynologyDrive\LSH\HYSETS
+
+# variables to use as time series input (names match the data file column headers)
+# Note: In case of multiple input forcing products, you have to append the forcing product behind
+# each variable. E.g. 'prcp(mm/day)' of the daymet product is 'prcp(mm/day)_daymet'
+dynamic_inputs:
+  - precip(mm/d)
+  - tmax(C)
+  - tmin(C)
+  - swe(mm/d)
+
+# which columns to use as target
+target_variables:
+  - q(mm/d)
+
+# clip negative predictions to zero for all variables listed below. Should be a list, even for single variables.
+clip_targets_to_zero:
+  - q(mm/d)
+
+static_attributes:
+- Elevation_m
+- Slope_deg
+- Land_Use_Forest_frac
+- Land_Use_Grass_frac
+- Land_Use_Wetland_frac
+- Land_Use_Water_frac
+- Land_Use_Urban_frac
+- Land_Use_Shrubs_frac
+- Land_Use_Crops_frac
+- precip_mean(mm/d)
+- precip_high(mm/d)
+- precip_mean(mm/mo)
+- precip_mean(mm/y)
+- precip_high_freq(d/yr)
+- precip_high_dur(d)
+- precip_low_freq(d/yr)
+- precip_low_dur(d)
+- baseflow_index(-)
+- q_mean(mm/d)
+- q_high(mm/d)
+- q_low(mm/d)
+- q_high_freq(d/yr)
+- q_high_dur(d)
+- q_low_dur(d)
+- q_95
+- q_5
+- runoff_ratio
+- q_adf(-)
+- q_adf_p(-)
+- q_adf_cv1(-)
+- q_adf_cv5(-)
+- q_adf_cv10(-)
+- q_seasonality(-)
+- tmean_seasonality(-)
+- tmean_alltime(C)
+- tmax_annual_mean(C)
+- tmin_annual_mean(C)

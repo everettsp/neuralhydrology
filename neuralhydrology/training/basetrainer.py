@@ -138,6 +138,10 @@ class BaseTrainer(object):
         tensorboard logging, and Tester class.
         If called in a ``continue_training`` context, this model will also restore the model and optimizer state.
         """
+
+        if self.cfg.is_finetuning:
+            self._scaler = load_scaler(self.cfg.base_run_dir)
+
         ds = self._get_dataset()
         if len(ds) == 0:
             raise ValueError("Dataset contains no samples.")
