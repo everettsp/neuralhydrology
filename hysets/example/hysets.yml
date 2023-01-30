@@ -20,7 +20,7 @@ test_start_date: "01/10/1994"
 test_end_date: "30/09/2006"
 
 # fixed seed, leave empty to use a random seed
-seed: 123
+seed: 0
 
 # which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
 device: cuda:0
@@ -28,10 +28,10 @@ device: cuda:0
 # --- Validation configuration ---------------------------------------------------------------------
 
 # specify after how many epochs to perform validation
-validate_every: 1
+validate_every: 5
 
 # specify how many random basins to use for validation
-validate_n_random_basins: 2
+validate_n_random_basins: 50
 
 # specify which metrics to calculate during validation (see codebase.evaluation.metrics)
 metrics:
@@ -49,7 +49,7 @@ head: regression
 # ----> General settings <----
 
 # Number of cell states of the LSTM
-hidden_size: 128
+hidden_size: 64
 
 # Initial bias value of the forget gate
 initial_forget_bias: 3
@@ -76,7 +76,7 @@ learning_rate:
 batch_size: 256
 
 # Number of training epochs
-epochs: 3
+epochs: 20
 
 # If True, clips norm of gradients
 clip_gradient_norm: 1
@@ -107,7 +107,7 @@ save_validation_results: True
 dataset: hysets
 
 # Path to CAMELS data set
-data_dir: C:\Users\everett\SynologyDrive\LSH\HYSETS
+data_dir: D:\SynologyDrive\LSH\HYSETS\
 
 # variables to use as time series input (names match the data file column headers)
 # Note: In case of multiple input forcing products, you have to append the forcing product behind
@@ -118,6 +118,9 @@ dynamic_inputs:
   - tmin(C)
   - swe(mm/d)
 
+lagged_features:
+    'q(mm/d)': 1
+    
 # which columns to use as target
 target_variables:
   - q(mm/d)
@@ -154,12 +157,6 @@ static_attributes:
 - q_95
 - q_5
 - runoff_ratio
-- q_adf(-)
-- q_adf_p(-)
-- q_adf_cv1(-)
-- q_adf_cv5(-)
-- q_adf_cv10(-)
-- q_seasonality(-)
 - tmean_seasonality(-)
 - tmean_alltime(C)
 - tmax_annual_mean(C)

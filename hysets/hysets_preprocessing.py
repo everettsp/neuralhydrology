@@ -18,6 +18,8 @@ from neuralhydrology.datasetzoo import hysets
 
 data_dir = Path(r"C:\Users\everett\SynologyDrive\LSH\hysets")
 
+
+#%%
 def sequence_duration(condition):
     condition = condition.values.flatten()
     if condition.sum() == 0:
@@ -201,9 +203,17 @@ df.to_csv(data_dir / 'HYSETS_watershed_properties_AUGMENTED.txt')
 with open(data_dir / 'ADDITIONAL_static_attribute_list.txt','w') as file:
     file.write('\n- '.join(list(df.columns)))
 
+
+with open(data_dir / 'ADDITIONAL_static_attributes.txt','r') as file:
+    lines = file.readlines()
+    lines = [x.lstrip('- ').rstrip('\n') for x in lines]
+
+# write basin list - omit basins with NaN attributes
 with open(data_dir / 'ADDITIONAL_basin_list.txt','w') as file:
-    file.write('\n'.join([str(x) for x in df.index]))
+    file.write('\n'.join([str(x) for x in df[~np.any(df[lines].isnull(),axis=1)].index]))
 
 
 
 # %%
+
+

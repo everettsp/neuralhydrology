@@ -147,7 +147,7 @@ def load_hysets_timeseries(data_dir: Path, basin: str) -> pd.DataFrame:
     with nc.Dataset(data_dir / 'HYSETS_2020_QC_stations.nc') as ds:
         hydromet = np.concatenate([ds[x][int(basin) == ds['watershedID'][:].data].data.reshape(-1,1) 
                     for x in ['discharge','pr','tasmax','tasmin']],axis=1)
-        
+            
     with nc.Dataset(data_dir / 'HYSETS_2020_ERA5Land_SWE.nc') as ds:
         swe = ds['swe'][int(basin) == ds['watershedID'][:].data].data.reshape(-1,1)
         
