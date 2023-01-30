@@ -107,7 +107,7 @@ save_validation_results: True
 dataset: camels_us
 
 # Path to CAMELS data set
-data_dir: D:\SynologyDrive\LSH\CAMELS_US
+data_dir: ../../data/CAMELS_US
 
 # Forcing product [daymet, maurer, maurer_extended, nldas, nldas_extended]
 # can be either a list of forcings or a single forcing product
