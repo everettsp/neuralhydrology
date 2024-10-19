@@ -28,7 +28,7 @@ The number of components can be set in the config.yml using ``n_distributions``.
 
 UMAL
 ^^^^
-:py:class:`neuralhydrology.modelzoo.head.CMAL` implements an *Uncountable Mixture of Asymmetric Laplacians* head. That is, a mixture density network that uses an uncountable amount of asymmetric Laplace distributions as components. The *uncountable property* is achieved by implicitly learning the conditional density and approximating it, when needed, with a Monte-Carlo integration, using sampled asymmetry parameters. The UMAL components are defined by two parameters (the location and the scale) and linked by a set of weights. The current implementation uses two hidden layers. The output activation for the scale has some major differences to the original implementation, since it is upper bounded (using :py:func:`0.5*torch.sigmoid`).
+:py:class:`neuralhydrology.modelzoo.head.UMAL` implements an *Uncountable Mixture of Asymmetric Laplacians* head. That is, a mixture density network that uses an uncountable amount of asymmetric Laplace distributions as components. The *uncountable property* is achieved by implicitly learning the conditional density and approximating it, when needed, with a Monte-Carlo integration, using sampled asymmetry parameters. The UMAL components are defined by two parameters (the location and the scale) and linked by a set of weights. The current implementation uses two hidden layers. The output activation for the scale has some major differences to the original implementation, since it is upper bounded (using :py:func:`0.5*torch.sigmoid`).
 
 During inference the number of components and weights used for the Monte-Carlo approximation are defined in the config.yml by ``n_taus``. The additional argument ``umal_extend_batch`` allows to explicitly account for this integration step during training by repeatedly sampling the asymmetry parameter and extending the batch by ``n_taus``. Furthermore, depending on the used output activation the sampling of the asymmetry parameters can yield unwarranted model behavior. Therefore the lower- and upper-bounds of the sampling can be adjusted using the ``tau_down`` and ``tau_up`` options in the config yml. 
 The sampling for UMAL is defined by choosing the number of samples (``n_samples``), and the approach for handling negative samples (``negative_sample_handling``).  
@@ -99,7 +99,46 @@ All features (``x_d``, ``x_s``, ``x_one_hot``) are concatenated and passed to th
 If ``statics/dynamics_embedding`` are used, the static/dynamic inputs will be passed through embedding networks before
 being concatenated.
 
+Hybrid-Model
+^^^^^^^^^^^^
+:py:class:`neuralhydrology.modelzoo.hybridmodel.HybridModel` is a wrapper class to combine data-driven methods with
+conceptual hydrological models. Specifically, an LSTM network is used to produce a dynamic parameterization for a
+conceptual hydrological model. The inputs for the model are split into two groups: i) the inputs going into the LSTM
+``dynamic_inputs``, ``static_attributes``, etc. and ii) the inputs going into the conceptual model ```dynamic_conceptual_inputs``. If the features
+used in the data-driven part are also used into the conceptual model, one should use the ``duplicate_features``
+configuration argument. One also has to add the input features of the conceptual model and the target variable into
+``custom_normalization``, due to the mass-conservative structure of the conceptual part.
+
+.. code-block:: yaml
+
+    dynamic_inputs:
+        prcp(mm/day)
+    duplicate_features:
+        prcp(mm/day)
+    dynamic_conceptual_inputs:
+        prcp(mm/day)_copy1
+    custom_normalization:
+        prcp(mm/day)_copy1:
+            centering: None
+            scaling: None
+        QObs(mm/d):
+            centering: None
+            scaling: None
+
 .. _MC-LSTM:
+
+Mamba
+^^^^^
+:py:class:`neuralhydrology.modelzoo.mamba.Mamba` is a state space model (SSM) using the PyTorch implementation
+https://github.com/state-spaces/mamba/tree/main from `Gu and Dao (2023) <https://arxiv.org/abs/2312.00752>`_.
+
+There are two required dependencies for Mamba: ``mamba_ssm`` and ``causal-conv1d``, which are the mamba ssm layer and
+implementation of a simple causal Conv1d layer used inside the Mamba block, respectively. Note the version here: ``causal-conv1d>=1.1.0``
+
+There are three hyperparameters which can be set in the config file:
+- ``mamba_d_conv``: Local convolution width (Default is set to 4)
+- ``mamba_d_state``: SSM state expansion factor (Default is set to 16)
+- ``mamba_expand``: Block expansion factor (Default is set to 2)
 
 MC-LSTM
 ^^^^^^^
@@ -159,6 +198,47 @@ The model requires the following hyperparameters specified in the config file:
 * ``transformer_dim_feedforward``: dimension of the feedforward networks between self-attention heads.
 * ``transformer_dropout``: dropout in the feedforward networks between self-attention heads.
 * ``transformer_nlayers``: number of stacked self-attention + feedforward layers.
+
+Handoff-Forecast-LSTM
+^^^^^^^^^^^^^^^^^^^^^
+:py:class:`neuralhydrology.modelzoo.handoff_forecast_lstm.HandoffForecastLSTM` is a forecasting model that uses a state-handoff to transition 
+from a hindcast sequence model to a forecast sequence (LSTM) model. The hindcast model is run from the past up to present (the issue time of the forecast) 
+and then passes the cell state and hidden state of the LSTM into a (nonlinear) handoff network, which is then used to initialize the cell state and 
+hidden state of a new LSTM that rolls out over the forecast period. The handoff network is implemented as a custom FC layer, which can have multiple layers.
+The handoff network is implemented using the ``state_handoff_network`` config parameter.
+The hindcast and forecast LSTMs have different weights and biases, different heads, and can have different embedding networks. The hidden size of the 
+hindcast LSTM is set using the ``hindcast_hidden_size`` config parameter and the hidden size of the forecast LSTM is set using the ``forecast_hidden_size`` 
+config parameter, which both default to ``hidden_size`` if not set explicitly.
+
+The handoff forecast LSTM model can implement a delayed handoff as well, such that the handoff between the hindcast and forecast LSTM occurs prior to the 
+forecast issue time. This is controlled by the ``forecast_overlap`` parameter in the config file, and the forecast and hindcast LSTMs will run concurrently 
+for the number of timesteps indicated by ``forecast_overlap``. We recommend using the ``ForecastOverlapMSERegularization`` regularization option to regularize 
+the loss function by (dis)agreement between the overlapping portion of the hindcast and forecast LSTMs. This regularization term can be requested by setting 
+the ``regularization`` parameter in the config file to include ``forecast_overlap``.
+
+Multihead-Forecast-LSTM
+^^^^^^^^^^^^^^^^^^^^^^^
+:py:class:`neuralhydrology.modelzoo.multihead_forecast_lstm.MultiheadForecastLSTM` is a forecasting model that runs a sequential (LSTM) model up to the forecast 
+issue time, and then directly predicts a sequence of forecast timesteps without using a recurrent rollout. Prediction is done with a custom ``FC`` (fully connected) 
+layer, which can have multiple layers. Do not use this model with ``forecast_overlap`` > 0.
+
+
+Sequential-Forecast-LSTM
+^^^^^^^^^^^^^^^^^^^^^^^^
+:py:class:`neuralhydrology.modelzoo.sequential_forecast_lstm.SequentialForecastLSTM` is a forecasting model that uses a single sequential (LSTM) model that rolls 
+out through both the hindcast and forecast sequences. The difference between this and a standard `CudaLSTM`_ is (1) this model uses both hindcast and forecast 
+input features, and (2) it uses a separate embedding network for the hindcast period and the forecast period. Do not use this model with ``forecast_overlap`` > 0.
+
+Stacked-Forecast-LSTM
+^^^^^^^^^^^^^^^^^^^^^
+:py:class:`neuralhydrology.modelzoo.stacked_forecast_lstm.StackedForecastLSTM` is a forecasting model that uses two stacked sequential (LSTM) models to handle 
+hindcast vs. forecast. The hindcast and forecast sequences must be the same length, and the ``forecast_overlap`` config parameter must be set to the correct overlap
+between these two sequences. For example, if we want to use a hindcast sequence length of 365 days to make a 7-day forecast, then ``seq_length`` and 
+``forecast_seq_length`` must both be set to 365, and ``forecast_overlap`` must be set to 358 (=365-7). Outputs from the hindcast LSTM are concatenated to the input 
+sequences to the forecast LSTM. This causes a lag of length (``seq_length`` - ``forecast_overlap``) timesteps between the latest hindcast data and the newest 
+forecast point, meaning that forecasts do not get information from the most recent dynamic inputs. To solve this, set the ``bidirectional_stacked_forecast_lstm``
+config parameter to True, so that the hindcast LSTM runs bidirectional and therefore all outputs from the hindcast LSTM receive information from the most recent 
+dynamic input data, however be aware that this can potentially result in hairy forecasts.
 
 
 Implementing a new model

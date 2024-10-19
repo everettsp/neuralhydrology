@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -68,7 +69,8 @@ class BaseLoss(torch.nn.Module):
                 raise ValueError("Number of weights must be equal to the number of target variables")
         self._target_weights = weights
 
-    def forward(self, prediction: Dict[str, torch.Tensor], data: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, prediction: Dict[str, torch.Tensor],
+                data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Calculate the loss.
 
         Parameters
@@ -85,7 +87,9 @@ class BaseLoss(torch.nn.Module):
         Returns
         -------
         torch.Tensor
-            The calculated loss.
+            The overall calculated loss.
+        Dict[str, torch.Tensor]
+            The individual components of the loss (e.g., regularization terms). 'total_loss' contains the overall loss.
         """
         # unpack loss-specific additional arguments
         kwargs = {key: data[key] for key in self._additional_data}
@@ -117,10 +121,17 @@ class BaseLoss(torch.nn.Module):
                 losses.append(loss * weight)
 
         loss = torch.sum(torch.stack(losses))
-        for regularization in self._regularization_terms:
-            loss = loss + regularization(prediction_sub, ground_truth_sub,
-                                         {k: v for k, v in prediction.items() if k not in self._prediction_keys})
-        return loss
+        total_loss = loss.clone()
+        all_losses = defaultdict(lambda: 0)
+        all_losses['loss'] = loss
+        for reg_module in self._regularization_terms:
+            reg_out = reg_module(prediction_sub, ground_truth_sub,
+                                 {k: v for k, v in prediction.items() if k not in self._prediction_keys})
+            total_loss += reg_module.weight * reg_out
+            # One name may appear multiple times. We add all regularizations of the same name for logging purposes.
+            all_losses[reg_module.name] += reg_out
+        all_losses['total_loss'] = total_loss
+        return total_loss, all_losses
 
     @staticmethod
     def _subset_in_time(prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
@@ -349,15 +360,15 @@ class MaskedUMALLoss(BaseLoss):
     def __init__(self, cfg, eps: float = 1e-5):
         super(MaskedUMALLoss, self).__init__(cfg,
                                              prediction_keys=['mu', 'b'],
-                                             ground_truth_keys=['y', 'tau'],
+                                             ground_truth_keys=['y_extended', 'tau'],
                                              output_size_per_target=2)
         self.eps = eps
         self._n_taus_count = cfg.n_taus
         self._n_taus_log = torch.as_tensor(np.log(cfg.n_taus).astype('float32'))
 
     def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
-        mask = ~torch.isnan(ground_truth['y']).any(1).any(1)
-        y = ground_truth['y'][mask]
+        mask = ~torch.isnan(ground_truth['y_extended']).any(1).any(1)
+        y = ground_truth['y_extended'][mask]
         t = ground_truth['tau'][mask]
         m = prediction['mu'][mask]
         b = prediction['b'][mask]

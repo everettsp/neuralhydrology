@@ -1,14 +1,79 @@
 import functools
+import pickle
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
+import xarray
 from pandas.tseries.frequencies import to_offset
+from ruamel.yaml import YAML
 from xarray.core.dataarray import DataArray
 from xarray.core.dataset import Dataset
+
+# Pandas switched from "Y" to "YE" and similar identifiers in 2.2.0. This snippet checks which one is correct for the
+# current pandas installation.
+_YE_FREQ = 'YE'
+_ME_FREQ = 'ME'
+_QE_FREQ = 'QE'
+try:
+    to_offset(_YE_FREQ)
+except ValueError:
+    _YE_FREQ = 'Y'
+    _ME_FREQ = 'M'
+    _QE_FREQ = 'Q'
+
+
+def load_scaler(run_dir: Path) -> Dict[str, Union[pd.Series, xarray.Dataset]]:
+    """Load feature scaler from run directory.
+
+    Checks run directory for scaler file in yaml format (new) or pickle format (old).
+
+    Parameters
+    ----------
+    run_dir: Path
+        Run directory. Has to contain a folder 'train_data' that contains the 'train_data_scaler' file.
+
+    Returns
+    -------
+    Dictionary, containing the feature scaler for static and dynamic features.
+    
+    Raises
+    ------
+    FileNotFoundError
+        If neither a 'train_data_scaler.yml' or 'train_data_scaler.p' file is found in the 'train_data' folder of the 
+        run directory.
+    """
+    scaler_file = run_dir / "train_data" / "train_data_scaler.yml"
+
+    if scaler_file.is_file():
+        # read scaler from disk
+        with scaler_file.open("r") as fp:
+            yaml = YAML(typ="safe")
+            scaler_dump = yaml.load(fp)
+
+        # transform scaler into the format expected by NeuralHydrology
+        scaler = {}
+        for key, value in scaler_dump.items():
+            if key in ["attribute_means", "attribute_stds", "camels_attr_means", "camels_attr_stds"]:
+                scaler[key] = pd.Series(value)
+            elif key in ["xarray_feature_scale", "xarray_feature_center"]:
+                scaler[key] = xarray.Dataset.from_dict(value).astype(np.float32)
+
+        return scaler
+
+    else:
+        scaler_file = run_dir / "train_data" / "train_data_scaler.p"
+
+        if scaler_file.is_file():
+            with scaler_file.open('rb') as fp:
+                scaler = pickle.load(fp)
+            return scaler
+        else:
+            raise FileNotFoundError(f"No scaler file found in {scaler_file.parent}. "
+                                    "Looked for (new) yaml file or (old) pickle file")
 
 
 def load_hydroatlas_attributes(data_dir: Path, basins: List[str] = []) -> pd.DataFrame:
@@ -97,7 +162,7 @@ def attributes_sanity_check(df: pd.DataFrame):
     # Check for NaNs in standard deviation of attributes.
     attributes = []
     if any(df.std() == 0.0) or any(df.std().isnull()):
-        for k, v in df.std().iteritems():
+        for k, v in df.std().items():
             if (v == 0) or (np.isnan(v)):
                 attributes.append(k)
     if attributes:
@@ -113,7 +178,7 @@ def attributes_sanity_check(df: pd.DataFrame):
     if len(nan_df) > 0:
         failure_cases = defaultdict(list)
         for basin, row in nan_df.iterrows():
-            for feature, value in row.iteritems():
+            for feature, value in row.items():
                 if np.isnan(value):
                     failure_cases[basin].append(feature)
         # create verbose error message
@@ -172,6 +237,12 @@ def infer_frequency(index: Union[pd.DatetimeIndex, np.ndarray]) -> str:
         raise ValueError(f'Cannot infer a legal frequency from dataset: {native_frequency}.')
     if native_frequency[0] not in '0123456789':  # add a value to the unit so to_timedelta works
         native_frequency = f'1{native_frequency}'
+
+    # pd.Timedelta doesn't understand weekly (W) frequencies, so we convert them to the equivalent multiple of 7D.
+    weekly_freq = re.match('(\d+)W(-(MON|TUE|WED|THU|FRI|SAT|SUN))?$', native_frequency)
+    if weekly_freq is not None:
+        n = int(weekly_freq[1]) * 7
+        native_frequency = f'{n}D'
 
     # Assert that the frequency corresponds to a positive time delta. We first add one offset to the base datetime
     # to make sure it's aligned with the frequency. Otherwise, adding an offset of e.g. 0Y would round up to the
@@ -286,11 +357,11 @@ def get_frequency_factor(freq_one: str, freq_two: str) -> float:
         # the offset anchor is irrelevant for the ratio between the frequencies, so we remove it from the string
         name_one = re.sub(regex_month_or_day, '', one.name)
         name_two = re.sub(regex_month_or_day, '', two.name)
-        if (name_one in ['A', 'Y'] and name_two == 'M') or (name_one in ['AS', 'YS'] and name_two == 'MS'):
+        if (name_one in ['A', _YE_FREQ] and name_two == _ME_FREQ) or (name_one in ['AS', 'YS'] and name_two == 'MS'):
             factor = 12 * one.n / two.n
-        if (name_one in ['A', 'Y'] and name_two == 'Q') or (name_one in ['AS', 'YS'] and name_two == 'QS'):
+        if (name_one in ['A', _YE_FREQ] and name_two == _QE_FREQ) or (name_one in ['AS', 'YS'] and name_two == 'QS'):
             factor = 4 * one.n / two.n
-        if (name_one == 'Q' and name_two == 'M') or (name_one == 'QS' and name_two == 'MS'):
+        if (name_one == _QE_FREQ and name_two == _ME_FREQ) or (name_one == 'QS' and name_two == 'MS'):
             factor = 3 * one.n / two.n
         if name_one == 'W' and name_two == 'D':
             factor = 7 * one.n / two.n
@@ -303,7 +374,9 @@ def get_frequency_factor(freq_one: str, freq_two: str) -> float:
     # If all other checks didn't match, we try to convert the frequencies to timedeltas. However, we first need to avoid
     # two cases: (1) pd.to_timedelta currently interprets 'M' as minutes, while it means months in to_offset.
     # (2) Using 'M', 'Y', and 'y' in pd.to_timedelta is deprecated and won't work in the future, so we don't allow it.
-    if any(re.sub(regex_month_or_day, '', offset.name) in ['M', 'Y', 'A', 'y'] for offset in [offset_one, offset_two]):
+    if any(
+            re.sub(regex_month_or_day, '', offset.name) in ['M', 'Y', 'A', 'y', 'ME', 'YE']
+            for offset in [offset_one, offset_two]):
         raise ValueError(f'Frequencies {freq_one} and/or {freq_two} are not comparable.')
     try:
         factor = pd.to_timedelta(freq_one) / pd.to_timedelta(freq_two)

@@ -9,7 +9,12 @@ General experiment configurations
 
 -  ``experiment_name``: Defines the name of your experiment that will be
    used as a folder name (+ date-time string), as well as the name in
-   TensorBoard.
+   TensorBoard. Curly brackets insert other configuration arguments into the 
+   experiment name. For example, the argument ``experiment_name: batch-size-is-{batch_size}`` 
+   will yield ``batch-size-is-42`` if the ``batch_size`` argument is set to
+   *42*. Furthermore, the special expression ``{random_name}`` (in the
+   experiment name) provides a randomly named string (e.g., ``yellow-frog``) 
+   that can make experimental runs easier to recognize. 
 
 -  ``run_dir``: Full or relative path to where the run directory is
    stored (if empty runs are stored in ${current\_working\_dir}/runs/)
@@ -102,7 +107,16 @@ Validation settings
 
 -  ``save_validation_results``: True/False, if True, stores the
    validation results to disk as a pickle file. Otherwise they are only
-   used for TensorBoard
+   used for TensorBoard. This is different than ``save_all_validation_output``
+   in that only the predictive outputs are saved, and not all of the
+   model output features.
+
+-  ``save_all_validation_output``: True/False, if True, stores all model
+   outputs from the validation runs to disk as a pickle file. 
+   Defaults to False. This differs from ``save_validation_results``, in 
+   that here all model output is saved. This can result in files that
+   are quite large. Predictions in this file will not be scaled. 
+   This is the raw output from the model.
 
 General model configuration
 ---------------------------
@@ -211,6 +225,14 @@ These are used if ``model == mtslstm``.
    current input timescale. In both cases, ``transfer_mtslstm_states``
    can be used to configure hidden and cell state transfer.
 
+Mamba settings
+~~~~~~~~~~~~~~
+These are used if ``model == mamba``.
+
+-  ``mamba_d_conv``: Local convolution width
+-  ``mamba_d_state``: State Space Model state expansion factor
+-  ``mamba_expand``: Block expansion factor
+
 Transformer settings
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -255,6 +277,50 @@ These are used if ``model == mclstm``.
    over time. Currently, the MC-LSTM configuration implemented here only supports a single mass input. Make sure to
    exclude this feature from the default normalization (see :ref:`MC-LSTM <MC-LSTM>` description).
 
+Hybrid-Model settings
+~~~~~~~~~~~~~~~~~~~~~
+
+These are used if ``model == hybrid_model``.
+
+- ``conceptual_model``: Name of the hydrological conceptual model that is used together with a data-driven method to
+  create the hybrid model e.g., [``SHM``].
+
+-  ``dynamic_conceptual_inputs``: List of features that are used as input in the conceptual part of the hybrid
+   model.
+
+-  ``warmup_period``: Number of time steps (e.g. days) before the information produced by the data-driven part is used
+   in the conceptual model.
+
+Handoff Forecast Model settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-  ``forecast_hidden_size``: Integer hidden size for the forecast (decoder) LSTM. This will default to ``hidden_size``.
+
+-  ``hindcast_hidden_size``: Integer hidden size for the hindcast (encoder) LSTM. This will default to ``hidden_size``.
+
+-  ``state_handoff_network``: Embedding network that defines the handoff of the cell state and hidden state from the 
+   hindcast LSTM to the forecast LSTM.
+
+-  ``forecast_overlap``: An integer number of timesteps where forecast
+   data overlaps with hindcast data. This does not add to the
+   ``forecast_sequence_length``, and must be no larger than the
+   ``forecast_sequence_length``.
+
+Multihead Forecast Model settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-  ``forecast_network``: Fully coupled network with one or multiple layers (this is an Embedding Network type, see documentation herein)
+   that defines the forecast (decoder) portion of the multi-head (non-rollout) forecast model.
+
+Stacked Forecast Model settings
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+-  ``bidirectional_stacked_forecast_lstm``: Whether or not the hindcast LSTM in a stacked forecast model should be bidirectional.
+
+-  ``forecast_hidden_size``: Integer hidden size for the forecast (decoder) LSTM. This will default to ``hidden_size``.
+
+-  ``hindcast_hidden_size``: Integer hidden size for the hindcast (encoder) LSTM. This will default to ``hidden_size``.
+
 Embedding network settings
 --------------------------
 
@@ -268,7 +334,8 @@ the EA-LSTM model. For multi-timescale models, these settings can be ignored.
    - ``type`` (default 'fc'): Type of the embedding net. Currently, only 'fc' for fully-connected net is supported.
    - ``hiddens``: List of integers that define the number of neurons per layer in the fully connected network.
      The last number is the number of output neurons. Must have at least length one.
-   - ``activation`` (default 'tanh'): activation function of the network. Supported values are 'tanh', 'sigmoid', 'linear'.
+   - ``activation`` (default 'tanh'): activation function of the network. Supported values are:
+     'tanh', 'sigmoid', 'linear', and 'relu'.
      The activation function is not applied to the output neurons, which always have a linear activation function.
      An activation function for the output neurons has to be applied in the main model class.
    - ``dropout`` (default 0.0): Dropout rate applied to the embedding network.
@@ -283,7 +350,7 @@ Training settings
 -----------------
 
 -  ``optimizer``: Specify which optimizer to use. Currently supported
-   is Adam (standard). New optimizers can be added
+   are Adam and AdamW. New optimizers can be added
    :py:func:`here <neuralhydrology.training.get_optimizer>`.
 
 -  ``loss``: Which loss to use. Currently supported are ``MSE``,
@@ -300,9 +367,13 @@ Training settings
    is ``1/n`` with ``n`` being the number of target variables. The order 
    of the weights corresponds to the order of the ``target_variables``.
 
--  ``regularization``: List of optional regularization terms. Currently
-   supported is ``tie_frequencies``, which couples the predictions of
-   all frequencies via an MSE term. New regularizations can be added
+-  ``regularization``: List of strings or 2-tuples with regularization terms and corresponding weights.
+   If no weights are specified, they default to 1.
+   Currently, two reqularizations are supported:
+   (1) ``tie_frequencies``, which couples the predictions of
+   all frequencies via an MSE term, and (2) ``forecast_overlap``, which
+   couples overlapping sequences between hindcast and forecast models.
+   New regularizations can be added
    :py:mod:`here <neuralhydrology.training.regularization>`.
 
 -  ``learning_rate``: Learning rate. Can be either a single number (for
@@ -313,7 +384,10 @@ Training settings
 
 -  ``batch_size``: Mini-batch size used for training.
 
--  ``epochs``: Number of training epochs
+-  ``epochs``: Number of training epochs.
+
+-  ``max_updates_per_epoch``: Maximum number of weight updates per training epoch.
+   Leave unspecified to go through all data in every epoch.
 
 -  ``use_frequencies``: Defines the time step frequencies to use (daily,
    hourly, ...). Use `pandas frequency
@@ -331,6 +405,18 @@ Training settings
 -  ``seq_length``: Length of the input sequence. If ``use_frequencies``
    is used, this needs to be a dictionary mapping each frequency to a
    sequence length, else an int.
+
+-  ``forecast_seq_length``: Length of the forecast sequence. This is the
+   number of timesteps in the total ``seq_length`` that are part of the 
+   forecast rather than the hindcast. Note that this does not add to the
+   total ``seq_length``, and thus, the forecast sequence length must be
+   less than the total sequence length.
+
+-  ``forecast_overlap``: An integer number of timesteps where forecast
+   data overlaps with hindcast data. This does not add to the
+   ``forecast_sequence_length``, and must be no larger than the
+   ``forecast_sequence_length``. This is used for 
+   ``ForecastOverlapMSERegularization`` in the ``handoff_forecast_model``.
 
 -  ``predict_last_n``: Defines which time steps are used to calculate
    the loss, counted backwards. Can't be larger than ``seq_length``.
@@ -431,6 +517,24 @@ Data settings
          1H:
            - total_precipitation_nldas_hourly
 
+-  ``forecast_inputs``: These are dynamic features (exactly like ``dyncamic_inputs``)
+   that are used as inputs to the forecasting portion of a forecast model. This allows
+   different features to be used for the forecast and hindcast portions of a model.
+   If ``forecast_inputs`` is present, then all features in this list must also appear
+   in the ``dynamic_inputs`` list, which will contain both forecast and hindcast features.
+
+   Note that this does not currently support a forecast rollout, meaning that because
+   forecast inputs behave the same way as dynamic inputs, the forecast input for two
+   timesteps ahead of time t will be the same as the forecast input for one day ahead
+   of time t+1. 
+
+   Note also that forecasting (and forecast inputs) is not supported for multi-timescale
+   models.
+
+-  ``hindcast_inputs``: These are the same as ``forecast_inputs`` except that they are for
+   the hindcast portion of a forecast model. As with ``forecast_inputs`` these dynamic inputs
+   must be included in the ``dynamic_inputs`` list.
+
 -  ``target_variables``: List of the target variable(s). Names must match
    the exact names as defined in the data set.
 
@@ -514,6 +618,12 @@ Data settings
 -  ``use_basin_id_encoding``: True/False. If True, creates a
    basin-one-hot encoding as a(n) (additional) static feature vector for
    each sample.
+
+   ``timestep_counter``: True/False. If True, creates a sequence of counting integers
+   over the forecast sequence length as a dynamic input. This input is used to signal
+   forecast lead time for an unrolling forecast. A similar dynamic input of constant
+   zeros is added to the hindcast inputs. If a forecast model is not used then setting
+   ``timestep_counter`` to True will return an error.
 
 -  ``static_attributes``: Which static attributes to use (e.g., from the static camels attributes for the CAMELS
    dataset). Leave empty if none should be used. For hydroatlas attributes, use ``hydroatlas_attributes`` instead.

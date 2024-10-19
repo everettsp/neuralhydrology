@@ -5,11 +5,10 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from pandas.tseries.frequencies import to_offset
 import torch
 import xarray
 from torch.utils.data import DataLoader
@@ -17,13 +16,13 @@ from tqdm import tqdm
 
 from neuralhydrology.datasetzoo import get_dataset
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
-from neuralhydrology.datautils.utils import get_frequency_factor, load_basin_file, sort_frequencies
+from neuralhydrology.datautils.utils import get_frequency_factor, load_basin_file, load_scaler, sort_frequencies
 from neuralhydrology.evaluation import plots
 from neuralhydrology.evaluation.metrics import calculate_metrics, get_available_metrics
-from neuralhydrology.evaluation.utils import load_scaler, load_basin_id_encoding
+from neuralhydrology.evaluation.utils import load_basin_id_encoding, metrics_to_dataframe
 from neuralhydrology.modelzoo import get_model
 from neuralhydrology.modelzoo.basemodel import BaseModel
-from neuralhydrology.training import get_loss_obj
+from neuralhydrology.training import get_loss_obj, get_regularization_obj
 from neuralhydrology.training.logger import Logger
 from neuralhydrology.utils.config import Config
 from neuralhydrology.utils.errors import AllNaNError, NoEvaluationDataError
@@ -64,6 +63,8 @@ class BaseTester(object):
         if self.init_model:
             self.model = get_model(cfg).to(self.device)
 
+        self._disable_pbar = cfg.verbose == 0
+
         # pre-initialize variables, defined in class methods
         self.basins = None
         self.scaler = None
@@ -75,6 +76,7 @@ class BaseTester(object):
 
         # initialize loss object to compute the loss of the evaluation data
         self.loss_obj = get_loss_obj(cfg)
+        self.loss_obj.set_regularization_terms(get_regularization_obj(cfg=self.cfg))
 
         self._load_run_data()
 
@@ -98,7 +100,7 @@ class BaseTester(object):
         self.basins = load_basin_file(getattr(self.cfg, f"{self.period}_basin_file"))
 
         # load feature scaler
-        self.scaler = load_scaler(self.cfg.run_dir)
+        self.scaler = load_scaler(self.run_dir)
 
         # check for old scaler files, where the center/scale parameters had still old names
         if "xarray_means" in self.scaler.keys():
@@ -108,7 +110,7 @@ class BaseTester(object):
 
         # load basin_id to integer dictionary for one-hot-encoding
         if self.cfg.use_basin_id_encoding:
-            self.id_to_int = load_basin_id_encoding(self.cfg.run_dir)
+            self.id_to_int = load_basin_id_encoding(self.run_dir)
 
         for file in self.cfg.additional_feature_files:
             with open(file, "rb") as fp:
@@ -144,6 +146,7 @@ class BaseTester(object):
     def evaluate(self,
                  epoch: int = None,
                  save_results: bool = True,
+                 save_all_output: bool = False,
                  metrics: Union[list, dict] = [],
                  model: torch.nn.Module = None,
                  experiment_logger: Logger = None) -> dict:
@@ -155,6 +158,8 @@ class BaseTester(object):
             Define a specific epoch to evaluate. By default, the weights of the last epoch are used.
         save_results : bool, optional
             If True, stores the evaluation results in the run directory. By default, True.
+        save_all_output : bool, optional
+            If True, stores all of the model output in the run directory. By default, False.
         metrics : Union[list, dict], optional
             List of metrics to compute during evaluation. Can also be a dict that specifies per-target metrics
         model : torch.nn.Module, optional
@@ -188,8 +193,9 @@ class BaseTester(object):
             model.eval()
 
         results = defaultdict(dict)
+        all_output = {basin: None for basin in basins}
 
-        pbar = tqdm(basins, file=sys.stdout)
+        pbar = tqdm(basins, file=sys.stdout, disable=self._disable_pbar)
         pbar.set_description('# Validation' if self.period == "validation" else "# Evaluation")
 
         for basin in pbar:
@@ -207,11 +213,12 @@ class BaseTester(object):
 
             loader = DataLoader(ds, batch_size=self.cfg.batch_size, num_workers=0, collate_fn=ds.collate_fn)
 
-            y_hat, y, dates, loss = self._evaluate(model, loader, ds.frequencies)
+            y_hat, y, dates, all_losses, all_output[basin] = self._evaluate(model, loader, ds.frequencies,
+                                                                            save_all_output)
 
             # log loss of this basin plus number of samples in the logger to compute epoch aggregates later
             if experiment_logger is not None:
-                experiment_logger.log_step(loss=(loss, len(loader)))
+                experiment_logger.log_step(**{k: (v, len(loader)) for k, v in all_losses.items()})
 
             predict_last_n = self.cfg.predict_last_n
             seq_length = self.cfg.seq_length
@@ -282,12 +289,14 @@ class BaseTester(object):
                     for target_variable in self.cfg.target_variables:
                         # stack dates and time_steps so we don't just evaluate every 24H when use_frequencies=[1D, 1H]
                         obs = xr.isel(time_step=slice(-frequency_factor, None)) \
-                            .stack(datetime=['date', 'time_step'])[f"{target_variable}_obs"]
+                            .stack(datetime=['date', 'time_step']) \
+                            .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_obs"]
                         obs['datetime'] = freq_date_range
                         # check if there are observations for this period
                         if not all(obs.isnull()):
                             sim = xr.isel(time_step=slice(-frequency_factor, None)) \
-                                .stack(datetime=['date', 'time_step'])[f"{target_variable}_sim"]
+                                .stack(datetime=['date', 'time_step']) \
+                                .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_sim"]
                             sim['datetime'] = freq_date_range
 
                             # clip negative predictions to zero, if variable is listed in config 'clip_target_to_zero'
@@ -329,8 +338,15 @@ class BaseTester(object):
                                                                                is not None) and results:
             self._create_and_log_figures(results, experiment_logger, epoch)
 
+        # save model output to file, if requested
+        results_to_save = None
+        states_to_save = None
         if save_results:
-            self._save_results(results, epoch)
+            results_to_save = results
+        if save_all_output:
+            states_to_save = all_output
+        if save_results or save_all_output:
+            self._save_results(results=results_to_save, states=states_to_save, epoch=epoch)
 
         return results
 
@@ -354,7 +370,7 @@ class BaseTester(object):
                 # make sure the preamble is a valid file name
                 experiment_logger.log_figures(figures, freq, preamble=re.sub(r"[^A-Za-z0-9\._\-]+", "", target_var))
 
-    def _save_results(self, results: dict, epoch: int = None):
+    def _save_results(self, results: Optional[dict], states: Optional[dict] = None, epoch: int = None):
         """Store results in various formats to disk.
         
         Developer note: We cannot store the time series data (the xarray objects) as netCDF file but have to use
@@ -364,54 +380,38 @@ class BaseTester(object):
         # use name of weight file as part of the result folder name
         weight_file = self._get_weight_file(epoch=epoch)
 
+        # make sure the parent directory exists
+        parent_directory = self.run_dir / self.period / weight_file.stem
+        parent_directory.mkdir(parents=True, exist_ok=True)
+
+        # save metrics any time this function is called, as long as they exist
+        if self.cfg.metrics and results is not None:
+            df = metrics_to_dataframe(results, self.cfg.metrics)
+            metrics_file = parent_directory / f"{self.period}_metrics.csv"
+            df.to_csv(metrics_file)
+            LOGGER.info(f"Stored metrics at {metrics_file}")
+
         # store all results packed as pickle file
-        result_file = self.run_dir / self.period / weight_file.stem / f"{self.period}_results.p"
-        result_file.parent.mkdir(parents=True, exist_ok=True)
-        with result_file.open("wb") as fp:
-            pickle.dump(results, fp)
+        if results is not None:
+            result_file = parent_directory / f"{self.period}_results.p"
+            with result_file.open("wb") as fp:
+                pickle.dump(results, fp)
+            LOGGER.info(f"Stored results at {result_file}")
 
-        if self.cfg.metrics:
-            df = self._metrics_to_dataframe(results)
-            file_name = self.run_dir / self.period / weight_file.stem / f"{self.period}_metrics.csv"
-            df.to_csv(file_name)
+        # store all model output packed as pickle file
+        if states is not None:
+            result_file = parent_directory / f"{self.period}_all_output.p"
+            with result_file.open("wb") as fp:
+                pickle.dump(states, fp)
+            LOGGER.info(f"Stored states at {result_file}")
 
-        LOGGER.info(f"Stored results at {result_file}")
-
-    def _metrics_to_dataframe(self, results: dict) -> pd.DataFrame:
-        """Extract all metric values from result dictionary and convert to pandas.DataFrame
-
-        Parameters
-        ----------
-        results: dict
-            Dictionary, containing the results of the model evaluation as returned by the `Tester.evaluate()`.
-
-        Returns
-        -------
-        A basin indexed DataFrame with one column per metric. In case of multi-frequency runs, the metric names contain
-        the corresponding frequency as a suffix.
-        """
-        metrics_dict = defaultdict(dict)
-        for basin, basin_data in results.items():
-            for freq_results in basin_data.values():
-                for metric in self.cfg.metrics:
-                    if metric in freq_results.keys():
-                        metrics_dict[basin][metric] = freq_results[metric]
-                    else:
-                        # in case the current period has no valid samples, the result dict has no metric-key
-                        metrics_dict[basin][metric] = np.nan
-
-        df = pd.DataFrame.from_dict(metrics_dict, orient="index")
-        df.index.name = "basin"
-
-        return df
-
-    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: List[str]):
+    def _evaluate(self, model: BaseModel, loader: DataLoader, frequencies: List[str], save_all_output: bool = False):
         """Evaluate model"""
         predict_last_n = self.cfg.predict_last_n
         if isinstance(predict_last_n, int):
             predict_last_n = {frequencies[0]: predict_last_n}  # if predict_last_n is int, there's only one frequency
 
-        preds, obs, dates = {}, {}, {}
+        preds, obs, dates, all_output = {}, {}, {}, {}
         losses = []
         with torch.no_grad():
             for data in loader:
@@ -419,7 +419,19 @@ class BaseTester(object):
                 for key in data:
                     if not key.startswith('date'):
                         data[key] = data[key].to(self.device)
+                data = model.pre_model_hook(data, is_train=False)
                 predictions, loss = self._get_predictions_and_loss(model, data)
+
+                if all_output:
+                    for key, value in predictions.items():
+                        if value is not None and type(value) != dict:
+                            all_output[key].append(value.detach().cpu().numpy())
+                elif save_all_output:
+                    all_output = {
+                        key: [value.detach().cpu().numpy()]
+                        for key, value in predictions.items()
+                        if value is not None and type(value) != dict
+                    }
 
                 for freq in frequencies:
                     if predict_last_n[freq] == 0:
@@ -444,14 +456,25 @@ class BaseTester(object):
                 preds[freq] = preds[freq].numpy()
                 obs[freq] = obs[freq].numpy()
 
+        # concatenate all output variables (currently a dict-of-dicts) into a single-level dict
+        for key, list_of_data in all_output.items():
+            all_output[key] = np.concatenate(list_of_data, 0)
+
         # set to NaN explicitly if all losses are NaN to avoid RuntimeWarning
-        mean_loss = np.nanmean(losses) if len(losses) > 0 and not all(np.isnan(l) for l in losses) else np.nan
-        return preds, obs, dates, mean_loss
+        mean_losses = {}
+        if len(losses) == 0:
+            mean_losses['loss'] = np.nan
+        else:
+            for loss_name in losses[0].keys():
+                loss_values = [loss[loss_name] for loss in losses]
+                mean_losses[loss_name] = np.nanmean(loss_values) if not np.all(np.isnan(loss_values)) else np.nan
+
+        return preds, obs, dates, mean_losses, all_output
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         predictions = model(data)
-        loss = self.loss_obj(predictions, data)
-        return predictions, loss.item()
+        _, all_losses = self.loss_obj(predictions, data)
+        return predictions, {k: v.item() for k, v in all_losses.items()}
 
     def _subset_targets(self, model: BaseModel, data: Dict[str, torch.Tensor], predictions: np.ndarray,
                         predict_last_n: int, freq: str):
@@ -523,10 +546,10 @@ class UncertaintyTester(BaseTester):
 
     def _get_predictions_and_loss(self, model: BaseModel, data: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, float]:
         outputs = model(data)
-        loss = self.loss_obj(outputs, data)
+        _, all_losses = self.loss_obj(outputs, data)
         predictions = model.sample(data, self.cfg.n_samples)
         model.eval()
-        return predictions, loss.item()
+        return predictions, {k: v.item() for k, v in all_losses.items()}
 
     def _subset_targets(self,
                         model: BaseModel,

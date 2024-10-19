@@ -1,7 +1,10 @@
+import random
+import re
 import warnings
 from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Union, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 from ruamel.yaml import YAML
@@ -47,6 +50,32 @@ class Config(object):
 
         if not (self._cfg.get('dev_mode', False) or dev_mode):
             Config._check_cfg_keys(self._cfg)
+
+        # Adjust experiment name
+        if "experiment_name" in self._cfg and self._cfg["experiment_name"]:
+            # 1. Replace curly-bracketed entries
+            new_name = self._cfg["experiment_name"]
+            for key, val in self._cfg.items():
+                if key.endswith('_date'):
+                    if isinstance(val, list):
+                        date_string = '_'.join(elem.strftime('%Y-%m-%d') for elem in val)
+                    else:
+                        date_string = val.strftime('%Y-%m-%d')
+                    new_name = re.sub(f'{{{key}}}', date_string, new_name)
+            new_name = re.sub('{random_name}', create_random_name(), new_name)
+            try:
+                new_name = new_name.format(**self._cfg)
+            except KeyError as ex:
+                raise KeyError(f'Experiment name is {self._cfg["experiment_name"]} ' +
+                               f'but {{{ex}}} was not found in config.') from ex
+            # 2. Remove curly brackets and make sure experiment name can be used as folder in Linux and Windows
+            new_name = re.sub('{', "(", new_name)
+            new_name = re.sub('}', ")", new_name)
+            new_name = re.sub('"', "'", new_name)
+            new_name = re.sub('[<>:"/\\\\|?*]', "_", new_name)
+            new_name = re.sub(' ', '', new_name)
+
+            self._cfg["experiment_name"] = new_name
 
     def as_dict(self) -> dict:
         """Return run configuration as dictionary.
@@ -198,6 +227,14 @@ class Config(object):
             else:
                 pass
 
+        # Check forecast sequence length.
+        if cfg.get('forecast_seq_length'):
+            if cfg['forecast_seq_length'] >= cfg['seq_length']:
+                raise ValueError('Forecast sequence length must be < sequence length.')
+            if cfg.get('forecast_overlap'):
+                if cfg['forecast_overlap'] > cfg['forecast_seq_length']:
+                    raise ValueError('Forecast overlap must be <= forecast_seq_length.')
+
         # Check autoregressive inputs.
         if 'autoregressive_inputs' in cfg:
             if len(cfg['autoregressive_inputs']) > 1:
@@ -218,7 +255,6 @@ class Config(object):
                 cfg = yaml.load(fp)
         else:
             raise FileNotFoundError(yml_path)
-
         cfg = Config._parse_config(cfg)
 
         return cfg
@@ -246,6 +282,10 @@ class Config(object):
     @property
     def batch_size(self) -> int:
         return self._get_value_verbose("batch_size")
+
+    @property
+    def bidirectional_stacked_forecast_lstm(self) -> bool:
+        return self._cfg.get("bidirectional_stacked_forecast_lstm", False)
 
     @property
     def cache_validation_data(self) -> bool:
@@ -305,11 +345,19 @@ class Config(object):
             raise RuntimeError(f"Unsupported type {type(duplicate_features)} for 'duplicate_features' argument.")
 
     @property
+    def dynamic_conceptual_inputs(self) -> List[str]:
+        return self._as_default_list(self._cfg.get("dynamic_conceptual_inputs", []))
+
+    @property
+    def warmup_period(self) -> int:
+        return self._cfg.get("warmup_period", 0)
+
+    @property
     def dynamic_inputs(self) -> Union[List[str], Dict[str, List[str]]]:
         return self._get_value_verbose("dynamic_inputs")
 
     @property
-    def dynamics_embedding(self) -> bool:
+    def dynamics_embedding(self) -> dict:
         embedding_spec = self._cfg.get("dynamics_embedding", None)
 
         if embedding_spec is None:
@@ -350,12 +398,44 @@ class Config(object):
             raise ValueError(f"Unknown data type {type(finetune_modules)} for 'finetune_modules' argument.")
 
     @property
+    def forecast_network(self) -> dict:
+        embedding_spec = self._cfg.get("forecast_network", None)
+
+        if embedding_spec is None:
+            return None
+        return self._get_embedding_spec(embedding_spec)
+
+    @property
+    def forecast_hidden_size(self) -> int:
+        return self._cfg.get("forecast_hidden_size", self.hidden_size)
+
+    @property
+    def forecast_inputs(self) -> List[str]:
+        return self._cfg.get("forecast_inputs", [])
+
+    @property
+    def forecast_overlap(self) -> int:
+        return self._cfg.get("forecast_overlap", None)
+
+    @property
+    def forecast_seq_length(self) -> int:
+        return self._cfg.get("forecast_seq_length", None)
+
+    @property
     def forcings(self) -> List[str]:
         return self._as_default_list(self._get_value_verbose("forcings"))
 
     @property
     def save_git_diff(self) -> bool:
         return self._cfg.get('save_git_diff', False)
+
+    @property
+    def state_handoff_network(self) -> dict:
+        embedding_spec = self._cfg.get("state_handoff_network", None)
+
+        if embedding_spec is None:
+            return None
+        return self._get_embedding_spec(embedding_spec)
 
     @property
     def head(self) -> str:
@@ -365,8 +445,16 @@ class Config(object):
             return self._get_value_verbose("head")
 
     @property
+    def hindcast_inputs(self) -> List[str]:
+        return self._cfg.get("hindcast_inputs", [])
+
+    @property
     def hidden_size(self) -> Union[int, Dict[str, int]]:
         return self._get_value_verbose("hidden_size")
+
+    @property
+    def hindcast_hidden_size(self) -> Union[int, Dict[str, int]]:
+        return self._cfg.get("hindcast_hidden_size", self.hidden_size)
 
     @property
     def hydroatlas_attributes(self) -> List[str]:
@@ -440,8 +528,24 @@ class Config(object):
         self._cfg["loss"] = loss
 
     @property
+    def mamba_d_conv(self) -> int:
+        return self._cfg.get("d_conv", 4)
+
+    @property
+    def mamba_d_state(self) -> int:
+        return self._cfg.get("d_state", 16)
+
+    @property
+    def mamba_expand(self) -> int:
+        return self._cfg.get("expand", 2)
+
+    @property
     def mass_inputs(self) -> List[str]:
         return self._as_default_list(self._cfg.get("mass_inputs", []))
+
+    @property
+    def max_updates_per_epoch(self) -> Optional[int]:
+        return self._cfg.get("max_updates_per_epoch")
 
     @property
     def mc_dropout(self) -> bool:
@@ -458,6 +562,10 @@ class Config(object):
     @property
     def model(self) -> str:
         return self._get_value_verbose("model")
+
+    @property
+    def conceptual_model(self) -> str:
+        return self._cfg.get("conceptual_model", "SHM")
 
     @property
     def n_distributions(self) -> int:
@@ -544,7 +652,7 @@ class Config(object):
         return self._get_value_verbose("rating_curve_file")
 
     @property
-    def regularization(self) -> List[str]:
+    def regularization(self) -> List[Union[str, Tuple[str, float]]]:
         return self._as_default_list(self._cfg.get("regularization", []))
 
     @property
@@ -558,6 +666,10 @@ class Config(object):
     @property
     def save_train_data(self) -> bool:
         return self._cfg.get("save_train_data", False)
+
+    @property
+    def save_all_output(self) -> bool:
+        return self._cfg.get('save_all_output', False)
 
     @property
     def save_validation_results(self) -> bool:
@@ -622,7 +734,7 @@ class Config(object):
             return []
 
     @property
-    def statics_embedding(self) -> bool:
+    def statics_embedding(self) -> dict:
         embedding_spec = self._cfg.get("statics_embedding", None)
 
         if embedding_spec is None:
@@ -669,6 +781,10 @@ class Config(object):
     @property
     def test_start_date(self) -> pd.Timestamp:
         return self._get_value_verbose("test_start_date")
+
+    @property
+    def timestep_counter(self) -> bool:
+        return self._cfg.get("timestep_counter", False)
 
     @property
     def train_basin_file(self) -> Path:
@@ -775,3 +891,13 @@ class Config(object):
             'activation': embedding_spec.get('activation', 'tanh'),
             'dropout': embedding_spec.get('dropout', 0.0)
         }
+
+
+def create_random_name():
+    adjectives = ('white', 'black', 'green', 'golden', 'modern', 'lazy', 'great', 'meandering', 'nervous', 'demanding',
+                  'relaxed', 'dashing', 'clever', 'brave', 'charming')
+    nouns = ('mississippi', 'amazon', 'nile', 'yangtze', 'yellow', 'congo', 'mekong', 'otter', 'frog', 'trout',
+             'beaver', 'eel', 'catfish', 'salmon')
+
+    rng = random.Random(datetime.now().timestamp())  # use system time as random seed
+    return rng.choice(adjectives) + '-' + rng.choice(nouns)

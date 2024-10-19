@@ -14,7 +14,7 @@ LOGGER = logging.getLogger(__name__)
 def get_optimizer(model: torch.nn.Module, cfg: Config) -> torch.optim.Optimizer:
     """Get specific optimizer object, depending on the run configuration.
     
-    Currently only 'Adam' is supported.
+    Currently only 'Adam' and 'AdamW' are supported.
     
     Parameters
     ----------
@@ -30,6 +30,8 @@ def get_optimizer(model: torch.nn.Module, cfg: Config) -> torch.optim.Optimizer:
     """
     if cfg.optimizer.lower() == "adam":
         optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate[0])
+    elif cfg.optimizer.lower() == "adamw":
+        optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate[0])
     else:
         raise NotImplementedError(f"{cfg.optimizer} not implemented or not linked in `get_optimizer()`")
 
@@ -87,12 +89,18 @@ def get_regularization_obj(cfg: Config) -> List[regularization.BaseRegularizatio
     -------
     List[regularization.BaseRegularization]
         List of regularization objects that will be added to the loss during training.
-
     """
     regularization_modules = []
-    for reg_name in cfg.regularization:
+    for reg_item in cfg.regularization:
+        if isinstance(reg_item, str):
+            reg_name = reg_item
+            reg_weight = 1.0
+        else:
+            reg_name, reg_weight = reg_item
         if reg_name == "tie_frequencies":
-            regularization_modules.append(regularization.TiedFrequencyMSERegularization(cfg))
+            regularization_modules.append(regularization.TiedFrequencyMSERegularization(cfg=cfg, weight=reg_weight))
+        elif reg_name == "forecast_overlap":
+            regularization_modules.append(regularization.ForecastOverlapMSERegularization(cfg=cfg, weight=reg_weight))
         else:
             raise NotImplementedError(f"{reg_name} not implemented or not linked in `get_regularization_obj()`.")
 

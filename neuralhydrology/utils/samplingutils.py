@@ -1,16 +1,17 @@
-from typing import List, Dict, Callable
+from typing import Callable, Dict, List, Union
 
 import numpy as np
-from numba import njit
+import pandas as pd
 import torch
-from torch.distributions import Categorical, Uniform
+import xarray
+from numba import njit
+from torch.distributions import Categorical
 
 from neuralhydrology.utils.config import Config
-from neuralhydrology.training.utils import umal_extend_batch
 
 
-def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor],
-                            n_samples: int) -> Dict[str, torch.Tensor]:
+def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
+                            scaler: Dict[str, Union[pd.Series, xarray.Dataset]]) -> Dict[str, torch.Tensor]:
     """Point prediction samplers for the different uncertainty estimation approaches.
     
     This function provides different point sampling functions for the different uncertainty estimation approaches 
@@ -30,6 +31,8 @@ def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor],
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         The number of point prediction samples that should be created.
+    scaler : Dict[str, Union[pd.Series, xarray.Dataset]]
+        Scaler of the run.
 
     Returns
     -------
@@ -39,13 +42,13 @@ def sample_pointpredictions(model: 'BaseModel', data: Dict[str, torch.Tensor],
     """
 
     if model.cfg.head.lower() == "gmm":
-        samples = sample_gmm(model, data, n_samples)
+        samples = sample_gmm(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "cmal":
-        samples = sample_cmal(model, data, n_samples)
+        samples = sample_cmal(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "umal":
-        samples = sample_umal(model, data, n_samples)
+        samples = sample_umal(model, data, n_samples, scaler)
     elif model.cfg.head.lower() == "regression":
-        samples = sample_mcd(model, data, n_samples)  # regression head assumes mcd
+        samples = sample_mcd(model, data, n_samples, scaler)  # regression head assumes mcd
     else:
         raise NotImplementedError(f"Sampling mode not supported for head {model.cfg.head.lower()}!")
 
@@ -61,7 +64,8 @@ def _subset_target(parameter: Dict[str, torch.Tensor], n_target: int, steps: int
     return parameter_sub
 
 
-def _handle_negative_values(cfg: Config, values: torch.Tensor, sample_values: Callable) -> torch.Tensor:
+def _handle_negative_values(cfg: Config, values: torch.Tensor, sample_values: Callable,
+                            scaler: Dict[str, Union[pd.Series, xarray.Dataset]], nth_target: int) -> torch.Tensor:
     """Handle negative samples that arise while sampling from the uncertainty estimates.
 
     Currently supports (a) 'clip' for directly clipping values at zero and (b) 'truncate' for resampling values 
@@ -75,20 +79,27 @@ def _handle_negative_values(cfg: Config, values: torch.Tensor, sample_values: Ca
         Tensor with the sampled values.
     sample_values : Callable
         Sampling function to allow for repeated sampling in the case of truncation-handling. 
+    scaler : Dict[str, Union[pd.Series, xarray.Dataset]]
+        Scaler of the run.
+    nth_target : int
+        Index of the sampled target variable in cfg.target_variables.
 
     Returns
     -------
     torch.Tensor
         Bound values according to user specifications.  
     """
+    center = scaler["xarray_feature_center"][cfg.target_variables[nth_target]]
+    scale = scaler["xarray_feature_scale"][cfg.target_variables[nth_target]]
+    normalized_zero = -torch.from_numpy((center / scale).values).to(values)
     if cfg.negative_sample_handling.lower() == 'clip':
-        values = torch.relu(values)
+        values = torch.clamp(values, min=normalized_zero)
     elif cfg.negative_sample_handling.lower() == 'truncate':
-        values_smaller_zero = values < 0
+        values_smaller_zero = values < normalized_zero
         try_count = 0
-        while any(values_smaller_zero.flatten()):
+        while torch.any(values_smaller_zero.flatten()):
             values[values_smaller_zero] = sample_values(values_smaller_zero)
-            values_smaller_zero = values < 0
+            values_smaller_zero = values < normalized_zero
             try_count += 1
             if try_count >= cfg.negative_sample_max_retries:
                 break
@@ -143,9 +154,17 @@ class _SamplingSetup():
 
         dropout_modules = [model.dropout.p]
 
-        # Multi-Timescale models don't have an embedding_net
+        # Certain models don't have embedding_net(s)
         implied_statics_embedding, implied_dynamics_embedding = None, None
-        if cfg.model.lower() not in ['mtslstm', 'odelstm']:
+        if hasattr(model, 'forecast_embedding_net'):
+            implied_forecast_statics_embedding = model.forecast_embedding_net.statics_embedding_p_dropout
+            implied_forecast_dynamics_embedding = model.forecast_embedding_net.dynamics_embedding_p_dropout
+            dropout_modules += [implied_forecast_statics_embedding, implied_forecast_dynamics_embedding]
+        if hasattr(model, 'hindcast_embedding_net'):
+            implied_hindcast_statics_embedding = model.hindcast_embedding_net.statics_embedding_p_dropout
+            implied_hindcast_dynamics_embedding = model.hindcast_embedding_net.dynamics_embedding_p_dropout
+            dropout_modules += [implied_hindcast_statics_embedding, implied_hindcast_dynamics_embedding]
+        if hasattr(model, 'embedding_net'):
             implied_statics_embedding = model.embedding_net.statics_embedding_p_dropout
             implied_dynamics_embedding = model.embedding_net.dynamics_embedding_p_dropout
             dropout_modules += [implied_statics_embedding, implied_dynamics_embedding]
@@ -163,6 +182,10 @@ class _SamplingSetup():
                                   - model: {cfg.output_dropout}
                                   - statics_embedding: {implied_statics_embedding}
                                   - dynamics_embedding: {implied_dynamics_embedding}
+                                  - statics_forecast_embedding: {implied_forecast_statics_embedding}
+                                  - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
+                                  - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
+                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}
                                   - transformer: {implied_transformer_dropout}""")
         # check upper bound dropout:
         if cfg.mc_dropout and max_implied_dropout >= 1.0:
@@ -171,6 +194,10 @@ class _SamplingSetup():
                                   - model: {cfg.output_dropout}
                                   - statics_embedding: {implied_statics_embedding}
                                   - dynamics_embedding: {implied_dynamics_embedding}
+                                  - statics_forecast_embedding: {implied_forecast_statics_embedding}
+                                  - dynamics_forecast_embedding: {implied_forecast_dynamics_embedding}
+                                  - statics_hindcast_embedding: {implied_hindcast_statics_embedding}
+                                  - dynamics_hindcast_embedding: {implied_hindcast_dynamics_embedding}
                                   - transformer: {implied_transformer_dropout}""")
 
         # assign setup properties:
@@ -186,7 +213,7 @@ class _SamplingSetup():
         else:
             self.freq_suffixes = ['']
 
-        self.batch_size_data = data[f'x_d{self.freq_suffixes[0]}'].shape[0]
+        self.batch_size_data = data[f'y{self.freq_suffixes[0]}'].shape[0]
 
     def _get_frequency_last_n(self, freq_suffix: str):
         if isinstance(self.predict_last_n, int):
@@ -196,7 +223,8 @@ class _SamplingSetup():
         return frequency_last_n
 
 
-def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int) -> Dict[str, torch.Tensor]:
+def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
+               scaler: Dict[str, Union[pd.Series, xarray.Dataset]]) -> Dict[str, torch.Tensor]:
     """MC-Dropout based point predictions sampling.
 
     Naive sampling. This function does `n_samples` forward passes for each sample in the batch. Currently it is 
@@ -216,6 +244,8 @@ def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
+    scaler : Dict[str, Union[pd.Series, xarray.Dataset]]
+        Scaler of the run.
 
     Returns
     -------
@@ -250,7 +280,7 @@ def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
             values = _sample_values(ids)
 
             # bind values and add to sample_points:
-            values = _handle_negative_values(setup.cfg, values, _sample_values)
+            values = _handle_negative_values(setup.cfg, values, _sample_values, scaler, nth_target)
             sample_points.append(values)
 
         # add sample_points to dictionary of samples:
@@ -260,7 +290,8 @@ def sample_mcd(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
     return samples
 
 
-def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int) -> Dict[str, torch.Tensor]:
+def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
+               scaler: Dict[str, Union[pd.Series, xarray.Dataset]]) -> Dict[str, torch.Tensor]:
     """Sample point predictions with the Gaussian Mixture (GMM) head.
 
     This function generates `n_samples` GMM sample points for each entry in the batch. Concretely, the model is 
@@ -282,6 +313,8 @@ def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
+    scaler : Dict[str, Union[pd.Series, xarray.Dataset]]
+        Scaler of the run.
 
     Returns
     -------
@@ -331,10 +364,14 @@ def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
                 p_sub = torch.repeat_interleave(p_target[mask_nan, :, :], n_samples, dim=0)
 
                 # sample values, handle negatives and add to sample points:
-                values = _sample_gaussian_mixtures(np.ones(s_sub.shape, dtype=bool), m_sub, s_sub, p_sub)
+                values = _sample_gaussian_mixtures(torch.ones(s_sub.shape, dtype=bool), m_sub, s_sub, p_sub)
                 values = _handle_negative_values(
-                    setup.cfg, values, sample_values=lambda ids: _sample_gaussian_mixtures(ids, m_sub, s_sub, p_sub))
-                values = values.view(-1, frequency_last_n, n_samples)
+                    setup.cfg,
+                    values,
+                    sample_values=lambda ids: _sample_gaussian_mixtures(ids, m_sub, s_sub, p_sub),
+                    scaler=scaler,
+                    nth_target=nth_target)
+                values = values.view(-1, n_samples, frequency_last_n).permute(0, 2, 1)
 
                 sample_points[mask_nan, :, nth_target, :] = values.detach().cpu()
 
@@ -344,7 +381,8 @@ def sample_gmm(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int
     return samples
 
 
-def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int) -> Dict[str, torch.Tensor]:
+def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
+                scaler: Dict[str, Union[pd.Series, xarray.Dataset]]) -> Dict[str, torch.Tensor]:
     """Sample point predictions with the Countable Mixture of Asymmetric Laplacians (CMAL) head.
 
     This function generates `n_samples` CMAL sample points for each entry in the batch. Concretely, the model is 
@@ -366,6 +404,8 @@ def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
+    scaler : Dict[str, Union[pd.Series, xarray.Dataset]]
+        Scaler of the run.
 
     Returns
     -------
@@ -426,15 +466,17 @@ def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
                     m_sub = m_target[mask_nan, nth_timestep, :].gather(1, sub_choices)
                     b_sub = b_target[mask_nan, nth_timestep, :].gather(1, sub_choices)
 
-                    ids = np.ones(b_sub.shape, dtype=bool)
+                    ids = torch.ones(b_sub.shape, dtype=bool)
                     values_unbound = _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub)
                     values[mask_nan, nth_timestep] = _handle_negative_values(
                         setup.cfg,
                         values_unbound,
-                        sample_values=lambda ids: _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub))
+                        sample_values=lambda ids: _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub),
+                        scaler=scaler,
+                        nth_target=nth_target)
 
             # add the values to the sample_points:
-            values = values.reshape(-1, frequency_last_n, n_samples)
+            values = values.permute(1, 0).reshape(frequency_last_n, -1, n_samples).permute(1, 0, 2)
             values = values.detach().cpu()
             sample_points.append(values)
 
@@ -444,7 +486,8 @@ def sample_cmal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
     return samples
 
 
-def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int) -> Dict[str, torch.Tensor]:
+def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: int,
+                scaler: Dict[str, Union[pd.Series, xarray.Dataset]]) -> Dict[str, torch.Tensor]:
     """Sample point predictions with the Uncountable Mixture of Asymmetric Laplacians (UMAL) head.
 
     This function generates `n_samples` UMAL sample points for each entry in the batch. Concretely, the model is 
@@ -466,6 +509,8 @@ def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
         Dictionary, containing input features as key-value pairs.
     n_samples : int
         Number of samples to generate for each input sample.
+    scaler : Dict[str, Union[pd.Series, xarray.Dataset]]
+        Scaler of the run.
 
     Returns
     -------
@@ -486,7 +531,8 @@ def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
         model.train()
 
     # n_taus expands the batch by itself and adds a sampled tau as input (new_batch_size = n_taus*batch_size):
-    data = umal_extend_batch(data, setup.cfg, n_taus=setup.cfg.n_taus)
+    if 'y_extended' not in data:
+        data = model.pre_model_hook(data, is_train=False)
 
     # make predictions:
     pred = model(data)
@@ -527,12 +573,14 @@ def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
                     b_sub = b_target[mask_nan, :, sub_choice]
                     t_sub = t_target[mask_nan, :, sub_choice]
 
-                    ids = np.ones(b_sub.shape, dtype=bool)
+                    ids = torch.ones(b_sub.shape, dtype=bool)
                     values_unbound = _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub)
                     values = _handle_negative_values(
                         setup.cfg,
                         values_unbound,
-                        sample_values=lambda ids: _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub))
+                        sample_values=lambda ids: _sample_asymmetric_laplacians(ids, m_sub, b_sub, t_sub),
+                        scaler=scaler,
+                        nth_target=nth_target)
 
                     # add values to sample_points:
                     values = values.detach().cpu().unsqueeze(1)
@@ -543,11 +591,71 @@ def sample_umal(model: 'BaseModel', data: Dict[str, torch.Tensor], n_samples: in
         samples.update({freq_key: sample_points})
     return samples
 
+def umal_extend_batch(data: Dict[str, torch.Tensor], cfg: Config, n_taus: int = 1, extend_y: bool = False) \
+        -> Dict[str, torch.Tensor]:
+    """This function extends the batch for the usage in UMAL (see: [#]_). 
+    
+    UMAL makes an MC approximation to a mixture integral by sampling random asymmetry parameters (tau). This can be 
+    parallelized by expanding the batch for each tau.  
+    
+    Parameters
+    ----------
+    data : Dict[str, torch.Tensor]
+        Dictionary, containing input features as key-value pairs.
+    cfg : Config
+        The run configuration.
+    n_taus : int
+        Number of taus to expand the batch.
+    extend_y : bool
+        Option to also extend the labels/y. 
+    
+    Returns
+    -------
+    Dict[str, torch.Tensor]
+        Dictionary, containing expanded input features and tau samples as key-value pairs.
+
+    References
+    ----------
+    .. [#] A. Brando, J. A. Rodriguez, J. Vitria, and A. R. Munoz: Modelling heterogeneous distributions 
+        with an Uncountable Mixture of Asymmetric Laplacians. Advances in Neural Information Processing Systems, 
+        pp. 8838-8848, 2019.
+    """
+    # setup:
+    if cfg.use_frequencies:
+        freq_suffixes = [f'_{freq}' for freq in cfg.use_frequencies]
+    else:
+        freq_suffixes = ['']
+
+    for freq_suffix in freq_suffixes:
+        batch_size, seq_length, input_size = data[f'x_d{freq_suffix}'].shape
+
+        if isinstance(cfg.predict_last_n, int):
+            predict_last_n = cfg.predict_last_n
+        else:
+            predict_last_n = cfg.predict_last_n[freq_suffix[1:]]
+
+        # sample tau within [tau_down, tau_up] and add to data:
+        tau = (cfg.tau_up - cfg.tau_down) * torch.rand(batch_size * n_taus, 1, 1) + cfg.tau_down
+        tau = tau.repeat(1, seq_length, 1)  # in our convention tau remains the same over all inputs
+        tau = tau.to(data[f'x_d{freq_suffix}'].device)
+        data[f'tau{freq_suffix}'] = tau[:, -predict_last_n:, :]
+
+        # extend dynamic inputs with tau and expand batch:
+        x_d = data[f'x_d{freq_suffix}'].repeat(n_taus, 1, 1)
+        data[f'x_d{freq_suffix}'] = torch.cat([x_d, tau], dim=-1)
+        data[f'y_extended{freq_suffix}'] = data[f'y{freq_suffix}'].repeat(n_taus, 1, 1)
+        if f'x_s{freq_suffix}' in data:
+            data[f'x_s{freq_suffix}'] = data[f'x_s{freq_suffix}'].repeat(n_taus, 1)
+        if f'x_one_hot{freq_suffix}' in data:
+            data[f'x_one_hot{freq_suffix}'] = data[f'x_one_hot{freq_suffix}'].repeat(n_taus, 1)
+
+    return data
+
 
 @njit
 def bernoulli_subseries_sampler(
-    data: np.ndarray, 
-    missing_fraction: float, 
+    data: np.ndarray,
+    missing_fraction: float,
     mean_missing_length: float,
     start_sampling_on: bool = True,
 ) -> np.ndarray:
@@ -592,24 +700,24 @@ def bernoulli_subseries_sampler(
         raise ValueError('Shape of timeseries data must be N or (N, 1).')
 
     # Check that the distribution parameters make sense.
-    if mean_missing_length < missing_fraction / (1-missing_fraction):
+    if mean_missing_length < missing_fraction / (1 - missing_fraction):
         raise ValueError('Incompatible distribution parameters in timeseries sampling. Must be: ',
                          'mean_missing_length >= missing_fraction / (1-missing_fraction).')
     if missing_fraction < 0 or missing_fraction > 1:
         raise ValueError('Missing fraction must be in [0,1]')
-    
+
     if mean_missing_length <= 0:
         raise ValueError('Mean missing length must be > 0.')
 
     # Derive Bernoulli rate parameters.
     on_shift_rate = 1 / mean_missing_length
-    off_shift_rate = on_shift_rate * missing_fraction / (1-missing_fraction)
+    off_shift_rate = on_shift_rate * missing_fraction / (1 - missing_fraction)
 
     # Initialize storage for the samples.
     sampled_data = np.full(data.shape, np.nan)
     sampled_data[0] = data[0]
     if not start_sampling_on:
-      sampled_data[0] = np.nan
+        sampled_data[0] = np.nan
 
     # Bernoulli sampling.
     up_switches = np.random.binomial(n=1, p=on_shift_rate, size=data.shape)
@@ -617,7 +725,7 @@ def bernoulli_subseries_sampler(
 
     # Sampling -> stochastic process.
     for n in range(1, len(data)):
-        if np.isnan(sampled_data[n-1]):
+        if np.isnan(sampled_data[n - 1]):
             if up_switches[n]:
                 sampled_data[n] = data[n]
         else:
