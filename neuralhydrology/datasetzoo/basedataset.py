@@ -65,7 +65,7 @@ class BaseDataset(Dataset):
                  basin: str = None,
                  additional_features: List[Dict[str, pd.DataFrame]] = [],
                  id_to_int: Dict[str, int] = {},
-                 scaler: Dict[str, Union[pd.Series, xarray.DataArray]] = {}):
+                 scaler:dict = {}):
         super(BaseDataset, self).__init__()
         self.cfg = cfg
         self.is_train = is_train
@@ -101,6 +101,7 @@ class BaseDataset(Dataset):
         self.additional_features = additional_features
         self.id_to_int = id_to_int
         self.scaler = scaler
+
         # don't compute scale when finetuning
         if is_train and not scaler:
             self._compute_scaler = True
@@ -125,6 +126,7 @@ class BaseDataset(Dataset):
         self._attributes = {}
         self._y = {}
         self._per_basin_target_stds = {}
+        self._per_basin_target_prss = {}
         self._dates = {}
         self.start_and_end_dates = {}
         self.num_samples = 0
@@ -196,6 +198,10 @@ class BaseDataset(Dataset):
 
         if self._per_basin_target_stds:
             sample['per_basin_target_stds'] = self._per_basin_target_stds[basin]
+
+        if self._per_basin_target_prss:
+            sample['per_basin_target_prss'] = self._per_basin_target_prss[basin]
+
         if self.id_to_int:
             sample['x_one_hot'] = torch.nn.functional.one_hot(torch.tensor(self.id_to_int[basin]),
                                                               num_classes=len(self.id_to_int)).to(torch.float32)
@@ -518,6 +524,30 @@ class BaseDataset(Dataset):
         if len(nan_basins) > 0:
             LOGGER.warning("The following basins had not enough valid target values to calculate a standard deviation: "
                            f"{', '.join(nan_basins)}. NSE loss values for this basin will be NaN.")
+            
+    def _calculate_per_basin_prs(self, xr: xarray.Dataset):
+        basin_coordinates = xr["basin"].values.tolist()
+        forecast_lead_time = 1
+        if not self._disable_pbar:
+            LOGGER.info("Calculating target variable prss per basin")
+        nan_basins = []
+        for basin in tqdm(self.basins, file=sys.stdout, disable=self._disable_pbar):
+
+            obs = xr.sel(basin=basin)[self.cfg.target_variables].to_array().values
+            if np.sum(~np.isnan(obs)) > 1:
+                # calculate std for each target
+                naive_sim = np.roll(obs, shift=forecast_lead_time).copy()
+                naive_sim[:forecast_lead_time] = np.nan
+                per_basin_target_prss = torch.tensor(np.expand_dims(np.nansum((obs - naive_sim)**2, axis=1), 0), dtype=torch.float32)
+            else:
+                nan_basins.append(basin)
+                per_basin_target_prss = torch.full((1, obs.shape[0]), np.nan, dtype=torch.float32)
+
+            self._per_basin_target_prss[basin] = per_basin_target_prss
+
+        if len(nan_basins) > 0:
+            LOGGER.warning("The following basins had not enough valid target values to calculate a persistence coefficients: "
+                           f"{', '.join(nan_basins)}. PSE loss values for this basin will be NaN.")
 
     def _create_lookup_table(self, xr: xarray.Dataset):
         lookup = []
@@ -566,6 +596,11 @@ class BaseDataset(Dataset):
 
                 # number of frequency steps in one lowest-frequency step
                 frequency_factor = int(utils.get_frequency_factor(lowest_freq, freq))
+
+                # trim the resampled dataset such that it is divisible by the freq. factor 
+                if len(df_resampled) % frequency_factor != 0:
+                    df_resampled = df_resampled.iloc[:-((len(df_resampled) % frequency_factor)),:].copy()
+                
                 # array position i is the last entry of this frequency that belongs to the lowest-frequency sample i.
                 if len(df_resampled) % frequency_factor != 0:
                     raise ValueError(f'The length of the dataframe at frequency {freq} is {len(df_resampled)} '
@@ -601,6 +636,8 @@ class BaseDataset(Dataset):
             # AR inputs must go at the end of the df/array (this is assumed by the AR model).
             if self.cfg.autoregressive_inputs:
                 for freq in self.frequencies:
+                    df_resampled = df_native[dynamic_cols + self.cfg.target_variables + self.cfg.evolving_attributes +
+                            self.cfg.autoregressive_inputs].resample(freq).mean()
                     x_d[freq] = np.concatenate([x_d[freq], df_resampled[self.cfg.autoregressive_inputs].values], axis=1)
                 x_d_column_names += self.cfg.autoregressive_inputs
 
@@ -722,6 +759,10 @@ class BaseDataset(Dataset):
         if self.cfg.loss.lower() in ['nse', 'weightednse']:
             # get the std of the discharge for each basin, which is needed for the (weighted) NSE loss.
             self._calculate_per_basin_std(xr)
+
+        if self.cfg.loss.lower() in ['prs']:
+            # get the std of the discharge for each basin, which is needed for the (weighted) NSE loss.
+            self._calculate_per_basin_prs(xr)
 
         if self._compute_scaler:
             # get feature-wise center and scale values for the feature normalization

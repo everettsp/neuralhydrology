@@ -90,6 +90,48 @@ def nse(obs: DataArray, sim: DataArray) -> float:
 
     return float(value)
 
+def pi(obs: DataArray, sim: DataArray, forecast_lead_time:int=1) -> float:
+    r"""Persistence Index [#]_
+    
+    Persistence Index is the mean squared error normalised by the mean squared error of the naive model.
+    
+    .. math:: \text{PI} = 1 - \frac{\sum_{t=1}^{T}(Q_m^t - Q_o^t)^2}{\sum_{t=1}^T(Q_o^t - Q_o^{t-L})^2},
+    
+    where :math:`Q_m` are the simulations (here, `sim`), :math:`Q_o` are observations (here, `obs`), and :math:`L` is the forecast lead time.
+    
+    Parameters
+    ----------
+    obs : DataArray
+        Observed time series.
+    sim : DataArray
+        Simulated time series.
+    L : Int
+        Forecast lead time.
+
+    Returns
+    -------
+    float
+        Persistence Index
+        
+    References
+    ----------
+    .. [#] Kitanidis, P. K. and Bras, R. L.: Real‐time forecasting with a conceptual hydrologic model: 2. Applications and results, Water Resources Research, 16, 1034–1044, https://doi.org/10.1029/WR016i006p01034, 1980.
+
+
+    """
+
+    # verify inputs
+    _validate_inputs(obs, sim)
+
+    # get time series with only valid observations
+    obs, sim = _mask_valid(obs, sim)
+
+    denominator = ((obs - obs.shift({"datetime":forecast_lead_time}))**2).sum()
+    numerator = ((sim - obs)**2).sum()
+
+    value = 1 - numerator / denominator
+
+    return float(value)
 
 def mse(obs: DataArray, sim: DataArray) -> float:
     r"""Calculate mean squared error.
@@ -797,7 +839,8 @@ def calculate_all_metrics(obs: DataArray,
         "FMS": fdc_fms(obs, sim),
         "FLV": fdc_flv(obs, sim),
         "Peak-Timing": mean_peak_timing(obs, sim, resolution=resolution, datetime_coord=datetime_coord),
-        "Peak-MAPE": mean_absolute_percentage_peak_error(obs, sim)
+        "Peak-MAPE": mean_absolute_percentage_peak_error(obs, sim),
+        "PI": pi(obs, sim, forecast_lead_time=1),
     }
 
     return results
@@ -868,6 +911,8 @@ def calculate_metrics(obs: DataArray,
             values["Missed-Peaks"] = missed_peaks(obs, sim, resolution=resolution, datetime_coord=datetime_coord)
         elif metric.lower() == "peak-mape":
             values["Peak-MAPE"] = mean_absolute_percentage_peak_error(obs, sim)
+        elif metric.lower() == "pi":
+            values["PI"] = pi(obs,sim,forecast_lead_time=1)
         else:
             raise RuntimeError(f"Unknown metric {metric}")
 

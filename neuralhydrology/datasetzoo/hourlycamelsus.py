@@ -74,7 +74,7 @@ class HourlyCamelsUS(camelsus.CamelsUS):
             else:
                 # load daily CAMELS forcings and upsample to hourly
                 df, _ = camelsus.load_camels_us_forcings(self.cfg.data_dir, basin, forcing)
-                df = df.resample('1H').ffill()
+                df = df.resample('1h').ffill()
             if len(self.cfg.forcings) > 1:
                 # rename columns
                 df = df.rename(columns={col: f"{col}_{forcing}" for col in df.columns if 'qobs' not in col.lower()})
