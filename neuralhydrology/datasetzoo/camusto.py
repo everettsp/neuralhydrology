@@ -11,12 +11,13 @@ from neuralhydrology.utils.config import Config
 
 FORCING_FILENAMES = [
     "eccc_idw1_1d",
-    "eccc_idw1_1h",
-    "trca_15min"
+    "eccc_idw2_1h",
+    "trca_15min",
+    "camusto_1h",
+    "camusto_1d",
     ]
 
 ATTRIBUTE_FILES = ["hydromet.csv", "landuse.csv"]
-
 
 def load_timeseries(data_dir:Path, basin:str, forcing:str) -> pd.DataFrame:
     if forcing.lower() not in FORCING_FILENAMES:
@@ -24,6 +25,7 @@ def load_timeseries(data_dir:Path, basin:str, forcing:str) -> pd.DataFrame:
     
     with xr.open_dataset(data_dir / f"{forcing.lower()}.nc") as ds:
         df = ds.sel(station=basin).to_dataframe().drop(columns=["station"]).copy()
+        df.index.name = "date"
     return df
 
 
@@ -110,12 +112,18 @@ class CamusTO(BaseDataset):
 
         dfs = []
 
-        if not any(f.endswith('_15min') for f in self.cfg.forcings):
-            raise ValueError('Forcings include no fifteen-minute forcings set.')
+        #if not any(f.endswith('_15min') for f in self.cfg.forcings):
+        #    raise ValueError('Forcings include no fifteen-minute forcings set.')
         for forcing in self.cfg.forcings:
             
             df = load_timeseries(self.cfg.data_dir, basin=basin, forcing=forcing)
-            df = df.resample('15min').ffill()
+
+            if forcing.lower() == "camusto_1h":
+                df = df.resample('1h').ffill()
+            elif forcing.lower() == "camusto_1d":
+                df = df.resample('1d').ffill()
+            else:
+                raise ValueError(f"forcing {forcing} not available; choice include{FORCING_FILENAMES}")
 
             if len(self.cfg.forcings) > 1:
                 # rename columns
@@ -170,11 +178,21 @@ class CamusTO(BaseDataset):
         attribute_files = ["hydromet.csv", "landuse.csv"]
 
         for f in attribute_files:
-            if not f.exists():
+            if not (Path(self.cfg.data_dir) / f).exists():
                 raise FileNotFoundError()
             if f not in ATTRIBUTE_FILES:
                 raise ValueError(f"attribute file '{f}' not available; choices include{ATTRIBUTE_FILES}")
-        return pd.concat([pd.read_csv(self.cfg.data_dir / f, index_col=0) for f in attribute_files])
+
+
+        dfs= [pd.read_csv(Path(self.cfg.data_dir) / f, index_col=0) for f in attribute_files]
+        for df in dfs:
+            df.index.name = "TRCAID"
+        df = pd.concat(dfs, axis=1)
+        df = df.loc[~df.isnull().any(axis=1),:] # remove basins with missing values
+        df = df.loc[:,~(df.std() < 1E-10)] # remove attributes with std of 0
+
+
+        return df
 
 
 

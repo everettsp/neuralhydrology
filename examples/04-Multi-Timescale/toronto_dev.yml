@@ -1,33 +1,42 @@
 # --- Experiment configurations --------------------------------------------------------------------
 
 # experiment name, used as folder name
-experiment_name: test_run
+experiment_name: simple
+
 
 # input and output frequencies
 use_frequencies:
-  - 1H
-  - 1D
+  - 1h
+  - 15min
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
-train_basin_file: 1_basin.txt
-validation_basin_file: 1_basin.txt
-test_basin_file: 1_basin.txt
+train_basin_file: 1_basin_trca.txt
+validation_basin_file: 1_basin_trca.txt
+test_basin_file: 1_basin_trca.txt
 
 # training, validation and test time periods (format = 'dd/mm/yyyy')
-train_start_date: "01/10/1999"
-train_end_date: "30/09/2008"
-validation_start_date: "01/10/1996"
-validation_end_date: "30/09/1999"
-test_start_date: "01/10/1989"
-test_end_date: "30/09/1996"
+train_start_date: "01/01/2018"
+train_end_date: "01/01/2019"
+validation_start_date: "01/01/2019"
+validation_end_date: "01/01/2020"
+test_start_date: "01/01/2020"
+test_end_date: "01/01/2021"
+
+
+#train_start_date: "01/01/2013"
+#train_end_date: "01/01/2016"
+#validation_start_date: "01/01/2016"
+#validation_end_date: "01/01/2017"
+#test_start_date: "01/01/2017"
+#test_end_date: "01/01/2022"
 
 # which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
-device: cpu
+device: cuda:0
 
 # --- Validation configuration ---------------------------------------------------------------------
 
 # specify after how many epochs to perform validation
-validate_every: 5
+validate_every: 1
 
 # specify how many random basins to use for validation
 validate_n_random_basins: 1
@@ -36,7 +45,7 @@ validate_n_random_basins: 1
 # this can either be a list or a dictionary. If a dictionary is used, the inner keys must match the name of the
 # target_variable specified below. Using dicts allows for different metrics per target variable.
 metrics:
-  - NSE
+  - KGE
 
 # --- Model configuration --------------------------------------------------------------------------
 
@@ -62,13 +71,13 @@ output_activation: linear
 # ----> General settings <----
 
 # Number of cell states of the LSTM
-hidden_size: 20
+hidden_size: 12
 
 # Initial bias value of the forget gate
 initial_forget_bias: 3
 
 # Dropout applied to the output of the LSTM
-output_dropout: 0.4
+output_dropout: 0.2
 
 # --- Training configuration -----------------------------------------------------------------------
 
@@ -84,42 +93,48 @@ regularization:
 
 # specify learning rates to use starting at specific epochs (0 is the initial learning rate)
 learning_rate:
-  0: 1e-2
-  30: 5e-3
-  40: 1e-3
+  0: 0.1
+  20: 0.01
+  40: 0.001
+  60: 0.0001
+  80: 1e-05
 
 # Mini-batch size
 batch_size: 256
 
 # Number of training epochs
-epochs: 50
+epochs: 128
 
 # If a value, clips the gradients during training to that norm.
 clip_gradient_norm: 1
 
 # Defines which time steps are used to calculate the loss. Can't be larger than seq_length.
 # If use_frequencies is used, this needs to be a dict mapping each frequency to a predict_last_n-value, else an int.
+# TODO: add assertion that predict_last_n // freq_factor !=0
 predict_last_n:
-  1D: 1
-  1H: 24
+  1h: 24
+  15min: 12
 
 # Length of the input sequence
 # If use_frequencies is used, this needs to be a dict mapping each frequency to a seq_length, else an int.
 seq_length:
-  1D: 365
-  1H: 336
+  1h: 24
+  15min: 8
+
+#  1h: 336
+#  15min: 192
 
 # Number of parallel workers used in the data pipeline
 num_workers: 8
 
 # Log the training loss every n steps
-log_interval: 5
+log_interval: 2
 
 # If true, writes logging results into tensorboard file
-log_tensorboard: False
+log_tensorboard: True
 
 # If a value and greater than 0, logs n random basins as figures during validation
-log_n_figures: 0
+log_n_figures: 3
 
 # Save model weights every n epochs
 save_weights_every: 1
@@ -127,46 +142,78 @@ save_weights_every: 1
 # --- Data configurations --------------------------------------------------------------------------
 
 # which data set to use [camels_us, camels_gb, global, hourly_camels_us]
-dataset: hourly_camels_us
+dataset: camusto
 
 # Path to data set root
-data_dir: F:\Data\LSH\CAMELS_US
+data_dir: C:\Users\everett\Documents\GitHub\camus_to\data\clean
 
 # Forcing product [daymet, maurer, maurer_extended, nldas, nldas_extended, nldas_hourly]
 # can be either a list of forcings or a single forcing product
 forcings:
-  - nldas_hourly
-  - daymet
+  - trca_15min
+  - eccc_idw2_1h
 
 dynamic_inputs:
-  1D:
-    - prcp(mm/day)_daymet
-    - srad(W/m2)_daymet
-    - tmax(C)_daymet
-    - tmin(C)_daymet
-    - vp(Pa)_daymet
-  1H:
-    - convective_fraction_nldas_hourly
-    - longwave_radiation_nldas_hourly
-    - potential_energy_nldas_hourly
-    - potential_evaporation_nldas_hourly
-    - pressure_nldas_hourly
-    - shortwave_radiation_nldas_hourly
-    - specific_humidity_nldas_hourly
-    - temperature_nldas_hourly
-    - total_precipitation_nldas_hourly
-    - wind_u_nldas_hourly
-    - wind_v_nldas_hourly
-    - prcp(mm/day)_daymet
-    - srad(W/m2)_daymet
-    - tmax(C)_daymet
-    - tmin(C)_daymet
-    - vp(Pa)_daymet
+  1h:
+    - temperature(C)_eccc_idw2_1h
+    - relative_humidity(percent)_eccc_idw2_1h
+    - stn_press(kPa)_eccc_idw2_1h
+    - precipitation(mm)_eccc_idw2_1h
+  15min:
+    - precipitation(mm)_trca_15min
 
 # which columns to use as target
 target_variables:
-  - QObs_CAMELS(mm/h)
+  - discharge(mm)_trca_15min
 
 # clip negative predictions to zero for all variables listed below. Should be a list, even for single variables.
 clip_targets_to_zero:
-  - qobs_mm_per_hour
+  - discharge(mm)_trca_15min
+
+use_basin_id_encoding: True
+
+static_attributes:
+  - precip_mean
+  - precip_high
+  - precip_mean_monthly
+  - precip_mean_annual
+  - high_precip_freq
+  - high_precip_dur
+  - low_precip_freq
+  - low_precip_dur
+  - basestage_index
+  - stage_mean
+  - stage_high
+  - stage_low
+  - high_stage_freq
+  - high_stage_dur
+  - low_stage_dur
+  - zero_stage_freq
+  - stage95
+  - stage5
+  - stage_adf
+  - stage_adf_p
+  - stage_adf_cv1
+  - stage_adf_cv5
+  - stage_adf_cv10
+  - stage_seasonality
+  - q_mean
+  - q_high
+  - q_low
+  - high_q_freq
+  - high_q_dur
+  - q95
+  - q5
+  - q_adf
+  - q_adf_cv1
+  - q_adf_cv5
+  - q_adf_cv10
+  - q_seasonality
+  - built_imperv(frac)
+  - built_perv(frac)
+  - forest(frac)
+  - rock(frac)
+  - soil(frac)
+  - transportation(frac)
+  - water(frac)
+  - wetland(frac)

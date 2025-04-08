@@ -15,8 +15,8 @@ test_basin_file: 1_basin.txt
 
 # training, validation and test time periods (format = 'dd/mm/yyyy')
 train_start_date: "01/10/1999"
-train_end_date: "30/09/2008"
-validation_start_date: "01/10/1996"
+train_end_date: "30/09/2001"
+validation_start_date: "01/10/1998"
 validation_end_date: "30/09/1999"
 test_start_date: "01/10/1989"
 test_end_date: "30/09/1996"
@@ -130,7 +130,7 @@ save_weights_every: 1
 dataset: hourly_camels_us
 
 # Path to data set root
-data_dir: F:\Data\LSH\CAMELS_US
+data_dir: E:\Data\LSH\CAMELS_US
 
 # Forcing product [daymet, maurer, maurer_extended, nldas, nldas_extended, nldas_hourly]
 # can be either a list of forcings or a single forcing product
@@ -146,17 +146,6 @@ dynamic_inputs:
     - tmin(C)_daymet
     - vp(Pa)_daymet
   1H:
-    - convective_fraction_nldas_hourly
-    - longwave_radiation_nldas_hourly
-    - potential_energy_nldas_hourly
-    - potential_evaporation_nldas_hourly
-    - pressure_nldas_hourly
-    - shortwave_radiation_nldas_hourly
-    - specific_humidity_nldas_hourly
-    - temperature_nldas_hourly
-    - total_precipitation_nldas_hourly
-    - wind_u_nldas_hourly
-    - wind_v_nldas_hourly
     - prcp(mm/day)_daymet
     - srad(W/m2)_daymet
     - tmax(C)_daymet
