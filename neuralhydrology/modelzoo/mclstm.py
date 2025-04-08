@@ -89,12 +89,12 @@ class MCLSTM(BaseModel):
                                   hidden_size=cfg.hidden_size,
                                   cfg=cfg)
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the MC-LSTM model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
 
         Returns
@@ -107,12 +107,12 @@ class MCLSTM(BaseModel):
                 - `c`: cell state of the MC-LSTM of shape [batch size, sequence length, hidden size].
 
         """
-        # possibly pass static inputs through embedding layers and concatenate with dynamics
-        x_d = self.embedding_net(data, concatenate_output=True)
+        # possibly pass static inputs through embedding layers and concatenate with dynamics.
+        # This does not include the mass input.
+        x_a = self.embedding_net(data, concatenate_output=True)
 
-        # the basedataset stores the mass input at the beginning
-        x_m = x_d[:, :, :self._n_mass_vars]
-        x_a = x_d[:, :, self._n_mass_vars:]
+        # transpose to [seq_length, batch_size, n_features].
+        x_m = torch.cat([data['x_d'][k] for k in self.cfg.mass_inputs], dim=-1).transpose(0, 1)
 
         # perform forward pass through the MC-LSTM cell
         m_out, c = self.mclstm(x_m, x_a)

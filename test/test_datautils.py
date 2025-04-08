@@ -8,9 +8,9 @@ from neuralhydrology.datautils.utils import (get_frequency_factor, infer_frequen
 
 def test_sort_frequencies():
     """Test the sorting of frequencies. """
-    assert sort_frequencies(['1D', '1H', '2D', '3H']) == ['2D', '1D', '3H', '1H']
+    assert sort_frequencies(['1D', '1h', '2D', '3H']) == ['2D', '1D', '3H', '1h']
     assert sort_frequencies(['1' + _ME_FREQ, '1' + _YE_FREQ]) == ['1' + _YE_FREQ, '1' + _ME_FREQ]
-    assert sort_frequencies(['1D', '48H']) == ['48H', '1D']
+    assert sort_frequencies(['1D', '48h']) == ['48h', '1D']
     assert sort_frequencies(['1D']) == ['1D']
     assert sort_frequencies([]) == []
 
@@ -20,7 +20,7 @@ def test_sort_frequencies():
 def test_infer_frequency():
     """Test the logic to infer frequencies. """
     assert infer_frequency(pd.date_range('2000-01-01', '2000-01-10', freq='D')) == '1D'
-    assert infer_frequency(pd.date_range('2000-01-01', '2000-01-10', freq='48H')) == '2D'
+    assert infer_frequency(pd.date_range('2000-01-01', '2000-01-10', freq='48h')) == '2D'
     assert infer_frequency(pd.date_range('2000-01-01', '2000-03-01', freq='W-MON')) == '7D'
 
     # just a single date
@@ -39,16 +39,16 @@ def test_infer_frequency():
 
 def test_get_frequency_factor():
     """Test the logic that calculates the ratio between two frequencies. """
-    assert get_frequency_factor('1H', '1H') == 1
+    assert get_frequency_factor('1h', '1h') == 1
     assert get_frequency_factor('1A', '1' + _YE_FREQ) == 1
     assert get_frequency_factor('1' + _YE_FREQ, '4' + _QE_FREQ) == 1
-    assert get_frequency_factor('1H', '1D') == 1 / 24
-    assert get_frequency_factor('1D', '1H') == 24
-    assert get_frequency_factor('2D', '12H') == 4
+    assert get_frequency_factor('1h', '1D') == 1 / 24
+    assert get_frequency_factor('1D', '1h') == 24
+    assert get_frequency_factor('2D', '12h') == 4
     assert get_frequency_factor('1W', '1D') == 7
     assert get_frequency_factor('1W-MON', '1D') == 7
     assert get_frequency_factor('1' + _YE_FREQ, '1' + _ME_FREQ) == 12
-    assert get_frequency_factor('0D', '0H') == 1
+    assert get_frequency_factor('0D', '0h') == 1
 
     pytest.raises(ValueError, get_frequency_factor, '1YS', '1' + _ME_FREQ)  # year-start vs. month-end
     pytest.raises(ValueError, get_frequency_factor, '1' + _QE_FREQ, '1W')  # quarter vs. week
@@ -57,4 +57,4 @@ def test_get_frequency_factor():
                   '1D')  # disallowed because to_timedelta('1Y') is deprecated
     pytest.raises(ValueError, get_frequency_factor, '1' + _ME_FREQ,
                   '1D')  # disallowed because to_timedelta('1M') is deprecated
-    pytest.raises(NotImplementedError, get_frequency_factor, '-1D', '1H')  # we should never need negative frequencies
+    pytest.raises(NotImplementedError, get_frequency_factor, '-1D', '1h')  # we should never need negative frequencies

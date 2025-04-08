@@ -63,12 +63,12 @@ class EALSTM(BaseModel):
 
         return h_1, c_1
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the EA-LSTM model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
 
         Returns

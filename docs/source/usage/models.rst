@@ -231,14 +231,17 @@ input features, and (2) it uses a separate embedding network for the hindcast pe
 
 Stacked-Forecast-LSTM
 ^^^^^^^^^^^^^^^^^^^^^
-:py:class:`neuralhydrology.modelzoo.stacked_forecast_lstm.StackedForecastLSTM` is a forecasting model that uses two stacked sequential (LSTM) models to handle 
-hindcast vs. forecast. The hindcast and forecast sequences must be the same length, and the ``forecast_overlap`` config parameter must be set to the correct overlap
-between these two sequences. For example, if we want to use a hindcast sequence length of 365 days to make a 7-day forecast, then ``seq_length`` and 
-``forecast_seq_length`` must both be set to 365, and ``forecast_overlap`` must be set to 358 (=365-7). Outputs from the hindcast LSTM are concatenated to the input 
-sequences to the forecast LSTM. This causes a lag of length (``seq_length`` - ``forecast_overlap``) timesteps between the latest hindcast data and the newest 
-forecast point, meaning that forecasts do not get information from the most recent dynamic inputs. To solve this, set the ``bidirectional_stacked_forecast_lstm``
-config parameter to True, so that the hindcast LSTM runs bidirectional and therefore all outputs from the hindcast LSTM receive information from the most recent 
-dynamic input data, however be aware that this can potentially result in hairy forecasts.
+:py:class:`neuralhydrology.modelzoo.stacked_forecast_lstm.StackedForecastLSTM` is a forecasting model that uses two stacked sequential (LSTM) models to handle hindcast vs. forecast. 
+    
+The total sequence length ``seq_length`` config parameter must be equal to the total hindcast + forecast time ranges. 
+    
+The forecast sequence length ``forecast_seq_length`` config parameter must be equal to the overlapping portion of the hindcast and forecast models plus the forecast time period. 
+    
+The ``forecast_overlap`` config parameter must be set to the correct overlap between these two sequences. 
+
+For example, if we want to use a spinup period of 365 days to make a 7-day forecast, then ``seq_length`` must be set to 372 (=365+7), ``forecast_seq_length`` must be set to 365, and ``forecast_overlap`` must be set to 358 (=365-7). 
+
+Outputs from the hindcast LSTM are concatenated to the input  sequences to the forecast LSTM and shifted in time by the forecast horizon (7 days in the example above. This causes a lag between the latest hindcast data and the newest forecast time point, meaning that forecasts do not get information from the most recent hindcast inputs. To solve this, set the ``bidirectional_stacked_forecast_lstm`` config parameter to True, so that the hindcast LSTM runs bidirectional and therefore all outputs from the hindcast LSTM receive information from the most recent hindcast input data.
 
 
 Implementing a new model
@@ -285,10 +288,10 @@ files.
 
             By convention, each forward pass has to accept a dict of input tensors. Usually, this dict contains 'x_d' and,
             possibly, x_s and x_one_hot. If x_d and x_s are available at multiple frequencies, the keys 'x_d' and 'x_s'
-            have frequency suffixes such as 'x_d_1H' for hourly data.
+            have frequency suffixes such as 'x_d_1h' for hourly data.
             Furthermore, by definition, each model has to return a dict containing the network predictions in 'y_hat',
             potentially in addition to other keys. LSTM-based models should stick to the convention to return (at least)
-            the following three tensors: y_hat, h_n, c_n (or, in the multi-frequency case, y_hat_1H, y_hat_1D, etc.).
+            the following three tensors: y_hat, h_n, c_n (or, in the multi-frequency case, y_hat_1h, y_hat_1D, etc.).
 
             Parameters
             ----------

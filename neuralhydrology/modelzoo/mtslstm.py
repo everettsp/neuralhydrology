@@ -82,8 +82,12 @@ class MTSLSTM(BaseModel):
             input_sizes += 1
 
         if isinstance(cfg.dynamic_inputs, list):
+            if isinstance(cfg.dynamic_inputs[0], list):
+                raise ValueError("MTS-LSTM does not support input feature groups.")
+            self._dynamic_inputs = {freq: cfg.dynamic_inputs for freq in self._frequencies}
             input_sizes = {freq: input_sizes + len(cfg.dynamic_inputs) for freq in self._frequencies}
         else:
+            self._dynamic_inputs = cfg.dynamic_inputs
             if self._is_shared_mtslstm:
                 raise ValueError(f'Different inputs not allowed if shared_mtslstm is used.')
             input_sizes = {freq: input_sizes + len(cfg.dynamic_inputs[freq]) for freq in self._frequencies}
@@ -154,7 +158,7 @@ class MTSLSTM(BaseModel):
         """Concat all different inputs to the time series input"""
         suffix = f"_{freq}"
         # transpose to [seq_length, batch_size, n_features]
-        x_d = data[f'x_d{suffix}'].transpose(0, 1)
+        x_d = torch.cat([data[f'x_d{suffix}'][k] for k in self._dynamic_inputs[freq]], dim=-1).transpose(0, 1)
 
         # concat all inputs
         if f'x_s{suffix}' in data and 'x_one_hot' in data:
@@ -179,12 +183,12 @@ class MTSLSTM(BaseModel):
 
         return x_d
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the MTS-LSTM model.
         
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Input data for the forward pass. See the documentation overview of all models for details on the dict keys.
 
         Returns

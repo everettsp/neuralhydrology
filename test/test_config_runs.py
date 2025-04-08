@@ -151,11 +151,11 @@ def test_multi_timescale_regression(get_config: Fixture[Callable[[str], dict]], 
     discharge = hourlycamelsus.load_hourly_us_netcdf(config.data_dir, config.forcings[0]) \
         .sel(basin=basin, date=slice(test_start_date, test_end_date))['qobs_mm_per_hour']
 
-    hourly_results = results['1H']['xr'].to_dataframe().reset_index()
-    hourly_results.index = hourly_results['date'] + hourly_results['time_step'] * to_offset('H')
-    assert (results['1H']['xr']['time_step'].values == list(range(24))).all()
+    hourly_results = results['1h']['xr'].to_dataframe().reset_index()
+    hourly_results.index = hourly_results['date'] + hourly_results['time_step'] * to_offset('h')
+    assert (results['1h']['xr']['time_step'].values == list(range(24))).all()
     assert hourly_results.index[0] == test_start_date
-    assert hourly_results.index[-1] == test_end_date.floor('H')
+    assert hourly_results.index[-1] == test_end_date.floor('h')
 
     daily_results = results['1D']['xr']
     assert (results['1D']['xr']['time_step'].values == [0]).all()

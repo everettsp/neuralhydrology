@@ -5,7 +5,7 @@ experiment_name: test_run
 
 # input and output frequencies
 use_frequencies:
-  - 1H
+  - 1h
   - 1D
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
@@ -21,7 +21,7 @@ validation_end_date: "30/09/1999"
 test_start_date: "01/10/1989"
 test_end_date: "30/09/1996"
 
-# which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
+# which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu, mps or None]
 device: cpu
 
 # --- Validation configuration ---------------------------------------------------------------------
@@ -101,13 +101,13 @@ clip_gradient_norm: 1
 # If use_frequencies is used, this needs to be a dict mapping each frequency to a predict_last_n-value, else an int.
 predict_last_n:
   1D: 1
-  1H: 24
+  1h: 24
 
 # Length of the input sequence
 # If use_frequencies is used, this needs to be a dict mapping each frequency to a seq_length, else an int.
 seq_length:
   1D: 365
-  1H: 336
+  1h: 336
 
 # Number of parallel workers used in the data pipeline
 num_workers: 8
@@ -145,7 +145,7 @@ dynamic_inputs:
     - tmax(C)_daymet
     - tmin(C)_daymet
     - vp(Pa)_daymet
-  1H:
+  1h:
     - convective_fraction_nldas_hourly
     - longwave_radiation_nldas_hourly
     - potential_energy_nldas_hourly

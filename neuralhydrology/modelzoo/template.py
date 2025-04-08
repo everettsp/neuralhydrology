@@ -35,22 +35,23 @@ class TemplateModel(BaseModel):
         # Create model parts here #
         ###########################
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Forward pass through the model
 
                 By convention, each forward pass has to accept a dict of input tensors. Usually, this dict contains
                 'x_d' and, possibly, x_s and x_one_hot. If x_d and x_s are available at multiple frequencies,
-                the keys 'x_d' and 'x_s' have frequency suffixes such as 'x_d_1H' for hourly data.
+                the keys 'x_d' and 'x_s' have frequency suffixes such as 'x_d_1h' for hourly data.
                 Furthermore, by definition, each model has to return a dict containing the network predictions in
                 'y_hat', potentially in addition to other dictionary keys. LSTM-based models should stick to the
                 convention to return (at least) the following three tensors: y_hat, h_n, c_n (or, in the multi-
-                frequency case, y_hat_1H, y_hat_1D, etc.).
+                frequency case, y_hat_1h, y_hat_1D, etc.).
 
                 Parameters
                 ----------
-                data : Dict[str, torch.Tensor]
+                data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
                      Dictionary with tensors
-                        - x_d of shape [batch size, sequence length, features] containing the dynamic input data.
+                        - x_d, a dictionary with the dynamic input data. Each key is a feature name, and each
+                            value is a tensor of shape [batch size, sequence length, 1].
                         - x_s of shape [batch size, features] containing static input features. These are the
                             concatenation of what is defined in the config under static_attributes and evolving_attributes.
                             In case not a single camels attribute or static input feature is defined in the config,
@@ -60,7 +61,7 @@ class TemplateModel(BaseModel):
                             not be present.
                             
                         Note: If the input data are available at multiple frequencies (via use_frequencies), each input
-                            tensor will have a suffix "_{freq}" indicating the tensor's frequency.
+                            dictionary key will have a suffix "_{freq}" indicating the corresponding value's frequency.
 
                 Returns
                 -------

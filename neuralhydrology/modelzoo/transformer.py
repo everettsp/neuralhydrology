@@ -2,13 +2,13 @@ import logging
 import math
 from typing import Dict
 
-import numpy as np
 import torch
 import torch.nn as nn
 
 from neuralhydrology.modelzoo.inputlayer import InputLayer
 from neuralhydrology.modelzoo.head import get_head
 from neuralhydrology.modelzoo.basemodel import BaseModel
+from neuralhydrology.modelzoo.positional_encoding import PositionalEncoding
 from neuralhydrology.utils.config import Config
 
 LOGGER = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class Transformer(BaseModel):
             encoder_dim = self.embedding_net.output_size
         else:
             raise RuntimeError(f"Unrecognized positional encoding type: {self._positional_encoding_type}")
-        self.positional_encoder = _PositionalEncoding(embedding_dim=self.embedding_net.output_size,
+        self.positional_encoder = PositionalEncoding(embedding_dim=self.embedding_net.output_size,
                                                       dropout=cfg.transformer_positional_dropout,
                                                       position_type=cfg.transformer_positional_encoding_type,
                                                       max_len=cfg.seq_length)
@@ -96,12 +96,12 @@ class Transformer(BaseModel):
             layer.linear2.weight.data.uniform_(-initrange, initrange)
             layer.linear2.bias.data.zero_()
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on a transformer model without decoder.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
 
         Returns
@@ -130,64 +130,3 @@ class Transformer(BaseModel):
         pred['positional_encoding'] = positional_encoding
 
         return pred
-
-
-class _PositionalEncoding(nn.Module):
-    """Class to create a positional encoding vector for timeseries inputs to a model without an explicit time dimension.
-
-    This class implements a sin/cos type embedding vector with a specified maximum length. Adapted from the PyTorch
-    example here: https://pytorch.org/tutorials/beginner/transformer_tutorial.html
-
-    Parameters
-    ----------
-    embedding_dim : int
-        Dimension of the model input, which is typically output of an embedding layer.
-    dropout : float
-        Dropout rate [0, 1) applied to the embedding vector.
-    max_len : int, optional
-        Maximum length of positional encoding. This must be larger than the largest sequence length in the sample.
-    """
-
-    def __init__(self, embedding_dim, position_type, dropout, max_len=5000):
-        super(_PositionalEncoding, self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, int(np.ceil(embedding_dim / 2) * 2))
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, embedding_dim, 2).float() * (-math.log(max_len * 2) / embedding_dim))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe[:, :embedding_dim].unsqueeze(0).transpose(0, 1)
-        self.register_buffer('pe', pe)
-
-        if position_type.lower() == 'concatenate':
-            self._concatenate = True
-        elif position_type.lower() == 'sum':
-            self._concatenate = False
-        else:
-            raise RuntimeError(f"Unrecognized positional encoding type: {position_type}")
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass for positional encoding. Either concatenates or adds positional encoding to encoder input data.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Dimension is ``[sequence length, batch size, embedding output dimension]``.
-            Data that is to be the input to a transformer encoder after including positional encoding.
-            Typically this will be output from an embedding layer.
-
-        Returns
-        -------
-        torch.Tensor
-            Dimension is ``[sequence length, batch size, encoder input dimension]``.
-            The encoder input dimension is either equal to the embedding output dimension (if ``position_type == sum``)
-            or twice the embedding output dimension (if ``position_type == concatenate``).
-            Encoder input augmented with positional encoding.
-
-        """
-        if self._concatenate:
-            x = torch.cat((x, self.pe[:x.size(0), :].repeat(1, x.size(1), 1)), 2)
-        else:
-            x = x + self.pe[:x.size(0), :]
-        return self.dropout(x)

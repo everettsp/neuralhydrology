@@ -49,6 +49,13 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ['**.ipynb_checkpoints', '_build']
 
+suppress_warnings = [
+    # Ignore new warning in Sphinx 7.3.0 while pickling environment:
+    #   WARNING: cannot cache unpickable configuration value: 'sphinx_gallery_conf'
+    # See also: https://github.com/sphinx-doc/sphinx/issues/12300
+    "config.cache",
+]
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for

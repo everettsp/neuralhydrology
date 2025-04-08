@@ -71,14 +71,14 @@ class ARLSTM(BaseModel):
             self.cell.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
     def forward(self,
-                data: Dict[str, torch.Tensor],
+                data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
                 h_0: torch.Tensor = None,
                 c_0: torch.Tensor = None) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the Autoregressive LSTM model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
 
         Returns

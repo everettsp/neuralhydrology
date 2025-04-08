@@ -5,7 +5,6 @@ channels:
   - conda-forge
 dependencies:
   - bokeh
-  - cpuonly
   - h5py
   - hdf5
   - jupyter
@@ -17,7 +16,6 @@ dependencies:
   - pytest
   - pytest-cov
   - python=3.10
-  - pytorch
   - ruamel.yaml
   - scipy
   - sphinx
@@ -25,6 +23,7 @@ dependencies:
   - xarray
   - yapf
   - pip:
+    - torch
     - tensorboard
     - sphinx-rtd-theme
     - nbsphinx

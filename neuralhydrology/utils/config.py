@@ -1,3 +1,4 @@
+import itertools
 import random
 import re
 import warnings
@@ -233,7 +234,7 @@ class Config(object):
                 raise ValueError('Forecast sequence length must be < sequence length.')
             if cfg.get('forecast_overlap'):
                 if cfg['forecast_overlap'] > cfg['forecast_seq_length']:
-                    raise ValueError('Forecast overlap must be <= forecast_seq_length.')
+                    raise ValueError('Forecast overlap must be <= forecast sequence length.')
 
         # Check autoregressive inputs.
         if 'autoregressive_inputs' in cfg:
@@ -325,10 +326,10 @@ class Config(object):
 
     @device.setter
     def device(self, device: str):
-        if device == "cpu" or device.startswith("cuda:"):
+        if device == "cpu" or device.startswith("cuda:") or device == "mps":
             self._cfg["device"] = device
         else:
-            raise ValueError("'device' must be either 'cpu' or a 'cuda:X', with 'X' being the GPU ID.")
+            raise ValueError("'device' must be either 'cpu', 'mps', or 'cuda:X', with 'X' being the GPU ID.")
 
     @property
     def duplicate_features(self) -> dict:
@@ -353,8 +354,18 @@ class Config(object):
         return self._cfg.get("warmup_period", 0)
 
     @property
-    def dynamic_inputs(self) -> Union[List[str], Dict[str, List[str]]]:
+    def dynamic_inputs(self) -> Union[list[str], list[list[str]], dict[str, list[str]]]:
         return self._get_value_verbose("dynamic_inputs")
+
+    @property
+    def dynamic_inputs_flattened(self) -> list[str]:
+        dynamic_inputs = self.dynamic_inputs
+        if isinstance(dynamic_inputs, dict):
+            return list(itertools.chain.from_iterable(dynamic_inputs.values()))
+        if dynamic_inputs and isinstance(dynamic_inputs[0], list):
+            return list(itertools.chain.from_iterable(dynamic_inputs))
+        else:
+            return dynamic_inputs
 
     @property
     def dynamics_embedding(self) -> dict:
@@ -410,8 +421,16 @@ class Config(object):
         return self._cfg.get("forecast_hidden_size", self.hidden_size)
 
     @property
-    def forecast_inputs(self) -> List[str]:
+    def forecast_inputs(self) -> list[str] | list[list[str]]:
         return self._cfg.get("forecast_inputs", [])
+
+    @property
+    def forecast_inputs_flattened(self) -> list[str]:
+        forecast_inputs = self.forecast_inputs
+        if forecast_inputs and isinstance(forecast_inputs[0], list):
+            return list(itertools.chain.from_iterable(forecast_inputs))
+        else:
+            return forecast_inputs
 
     @property
     def forecast_overlap(self) -> int:
@@ -445,8 +464,16 @@ class Config(object):
             return self._get_value_verbose("head")
 
     @property
-    def hindcast_inputs(self) -> List[str]:
+    def hindcast_inputs(self) -> list[str] | list[list[str]]:
         return self._cfg.get("hindcast_inputs", [])
+
+    @property
+    def hindcast_inputs_flattened(self) -> list[str]:
+        hindcast_inputs = self.hindcast_inputs
+        if hindcast_inputs and isinstance(hindcast_inputs[0], list):
+            return list(itertools.chain.from_iterable(hindcast_inputs))
+        else:
+            return hindcast_inputs
 
     @property
     def hidden_size(self) -> Union[int, Dict[str, int]]:
@@ -578,6 +605,25 @@ class Config(object):
     @property
     def n_taus(self) -> int:
         return self._get_value_verbose("n_taus")
+
+    @property
+    def nan_handling_method(self) -> str:
+        method = self._cfg.get("nan_handling_method", None)
+        if not method:
+            return None
+        return method
+
+    @property
+    def nan_sequence_probability(self) -> float:
+        return self._cfg.get("nan_sequence_probability", 0.0)
+
+    @property
+    def nan_step_probability(self) -> float:
+        return self._cfg.get("nan_step_probability", 0.0)
+
+    @property
+    def nan_handling_pos_encoding_size(self) -> int:
+        return self._cfg.get("nan_handling_pos_encoding_size", 0)
 
     @property
     def negative_sample_handling(self) -> str:

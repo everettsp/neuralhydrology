@@ -45,12 +45,12 @@ class EmbCudaLSTM(BaseModel):
         self.lstm = self.cudalstm.lstm
         self.head = self.cudalstm.head
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the EmbCudaLSTM model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
 
         Returns

@@ -99,7 +99,7 @@ class LamaH(BaseDataset):
             for val in cfg.dynamic_inputs.values():
                 all_variables = all_variables + val
         else:
-            all_variables = all_variables + cfg.dynamic_inputs
+            all_variables = all_variables + cfg.dynamic_inputs_flattened
         return all_variables
 
     def _load_basin_data(self, basin: str) -> pd.DataFrame:
@@ -108,8 +108,8 @@ class LamaH(BaseDataset):
         # Determine if hourly or daily data should be loaded, by default daily.
         temporal_resolution = '1D'
         if self.cfg.use_frequencies:
-            if any([utils.compare_frequencies(freq, '1D') == 1 for freq in self.cfg.use_frequencies]):
-                temporal_resolution = '1H'
+            if any(utils.compare_frequencies(freq, '1D') == 1 for freq in self.cfg.use_frequencies):
+                temporal_resolution = '1h'
 
         df = load_lamah_forcing(data_dir=self.cfg.data_dir,
                                 basin=basin,
@@ -145,7 +145,7 @@ def load_lamah_forcing(data_dir: Path, basin: str, sub_dataset: str, temporal_re
         One of {'lamah_a', 'lamah_b', 'lamah_c'}, defining which of the three catchment delinations/sub-datasets 
         (A_basins_total_upstrm, B_basins_intermediate_all, or C_basins_intermediate_lowimp) will be loaded.
     temporal_resolution: str, optional
-        Defines if either daily ('1D', default) or hourly ('1H') timeseries data will be loaded.
+        Defines if either daily ('1D', default) or hourly ('1h') timeseries data will be loaded.
 
     Returns
     -------
@@ -157,15 +157,15 @@ def load_lamah_forcing(data_dir: Path, basin: str, sub_dataset: str, temporal_re
     ValueError
         If 'sub_dataset' is not one of {'lamah_a', 'lamah_b', 'lamah_c'}.
     ValueError
-        If 'temporal_resolution' is not one of ['1H', '1D'].
+        If 'temporal_resolution' is not one of ['1h', '1D'].
     """
     if sub_dataset not in _SUBDATASET_TO_DIRECTORY:
         raise ValueError(
             f"{sub_dataset} is not a valid choice for 'sub_dataset'. Must be one of {_SUBDATASET_TO_DIRECTORY.keys()}.")
 
-    if temporal_resolution not in ['1D', '1H']:
+    if temporal_resolution not in ['1D', '1h']:
         raise ValueError(
-            f"{temporal_resolution} is not a valid choice for 'temporal_resolution'. Must be one of '1H', '1D'.")
+            f"{temporal_resolution} is not a valid choice for 'temporal_resolution'. Must be one of '1h', '1D'.")
 
     temporal_resolution_directory = 'daily' if temporal_resolution == '1D' else 'hourly'
 
@@ -187,7 +187,7 @@ def load_lamah_discharge(data_dir: Path,
     basin : str
         Basin identifier number as string.
     temporal_resolution: str, optional
-        Defines if either daily ('1D', default) or hourly ('1H') timeseries data will be loaded.
+        Defines if either daily ('1D', default) or hourly ('1h') timeseries data will be loaded.
     normalize_discharge: bool, optional
         If true, normalizes discharge data by basin area, using the 'area_gov' attribute from attribute file.
 
@@ -199,11 +199,11 @@ def load_lamah_discharge(data_dir: Path,
     Raises
     ------
     ValueError
-        If 'temporal_resolution' is not one of ['1H', '1D'].
+        If 'temporal_resolution' is not one of ['1h', '1D'].
     """
-    if temporal_resolution not in ['1D', '1H']:
+    if temporal_resolution not in ['1D', '1h']:
         raise ValueError(
-            f"{temporal_resolution} is not a valid choice for 'temporal_resolution'. Must be one of '1H', '1D'.")
+            f"{temporal_resolution} is not a valid choice for 'temporal_resolution'. Must be one of '1h', '1D'.")
 
     temporal_resolution_directory = 'daily' if temporal_resolution == '1D' else 'hourly'
     streamflow_dir = data_dir / 'D_gauges' / '2_timeseries' / temporal_resolution_directory
@@ -286,7 +286,7 @@ def _load_lamah_attribute_csv_file(file_path: Path) -> pd.DataFrame:
 
 def _normalize_discharge(ser: pd.Series, area: float, temporal_resolution: str) -> pd.Series:
     """Helper function to normalize discharge data by basin area"""
-    if temporal_resolution == "1H":
+    if temporal_resolution == "1h":
         return ser / (area * 1e6) * 1000 * 3600
     else:
         return ser / (area * 1e6) * 1000 * 86400

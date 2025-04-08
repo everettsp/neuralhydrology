@@ -14,18 +14,30 @@ class StackedForecastLSTM(BaseModel):
     """A forecasting model using stacked LSTMs for hindcast and forecast.
 
     This is a forecasting model that uses two stacked sequential (LSTM) models to handle 
-    hindcast vs. forecast. The hindcast and forecast sequences must be the same length,
-    and the ``forecast_overlap`` config parameter must be set to the correct overlap
-    between these two sequences. For example, if we want to use a hindcast sequence
-    length of 365 days to make a 7-day forecast, then ``seq_length`` and 
-    ``forecast_seq_length`` must both be set to 365, and ``forecast_overlap`` must be
-    set to 358 (=365-7). Outputs from the hindcast LSTM are concatenated to the input 
-    sequences to the forecast LSTM. This causes a lag of length (``seq_length`` - ``forecast_overlap``)
-    timesteps between the latest hindcast data and the newest forecast point, meaning
-    that forecasts do not get information from the most recent dynamic inputs. To solve
-    this, set the ``bidirectional_stacked_forecast_lstm`` config parameter to True, so
-    that the hindcast LSTM runs bidirectional and therefore all outputs from the hindcast
-    LSTM receive information from the most recent dynamic input data.
+    hindcast vs. forecast.
+        
+    The total sequence length ``seq_length`` config parameter must be equal to the total
+    hindcast + forecast time ranges. 
+    
+    The forecast sequence length ``forecast_seq_length`` config parameter must be equal
+    to the overlapping portion of the hindcast and forecast models plus the forecast
+    time period. 
+    
+    The ``forecast_overlap`` config parameter must be set to the correct overlap
+    between these two sequences. 
+    
+    For example, if we want to use a spinup period of 365 days to make a 7-day
+    forecast, then ``seq_length`` must be set to 372 (=365+7), ``forecast_seq_length``
+    must be set to 365, and ``forecast_overlap`` must be set to 358 (=365-7). 
+    
+    Outputs from the hindcast LSTM are concatenated to the input 
+    sequences to the forecast LSTM and shifted in time by the forecast horizon (7 days
+    in the example above. This causes a lag between the latest hindcast data and the
+    newest forecast time point, meaning that forecasts do not get information from the
+    most recent hindcast inputs. To solve this, set the
+    ``bidirectional_stacked_forecast_lstm`` config parameter to True, so that the
+    hindcast LSTM runs bidirectional and therefore all outputs from the hindcast
+    LSTM receive information from the most recent hindcast input data.
 
     Parameters
     ----------
@@ -68,12 +80,12 @@ class StackedForecastLSTM(BaseModel):
             self.hindcast_lstm.bias_hh_l0.data[self.hindcast_hidden_size:2 * self.hindcast_hidden_size] = self.cfg.initial_forget_bias
             self.forecast_lstm.bias_hh_l0.data[self.forecast_hidden_size:2 * self.forecast_hidden_size] = self.cfg.initial_forget_bias
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the StackedForecastLSTM model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
 
         Returns

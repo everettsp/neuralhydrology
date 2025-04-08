@@ -552,7 +552,7 @@ def baseflow_index(da: DataArray,
         freq = utils.infer_frequency(da[datetime_coord].values)
         if freq == '1D':
             n_passes = 3
-        elif freq == '1H':
+        elif freq == '1h':
             n_passes = 9
         else:
             raise ValueError(f'For frequencies other than daily or hourly, n_passes must be specified.')

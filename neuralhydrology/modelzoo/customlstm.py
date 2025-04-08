@@ -59,14 +59,14 @@ class CustomLSTM(BaseModel):
         self.head = get_head(cfg=cfg, n_in=self._hidden_size, n_out=self.output_size)
 
     def forward(self,
-                data: Dict[str, torch.Tensor],
+                data: dict[str, torch.Tensor | dict[str, torch.Tensor]],
                 h_0: torch.Tensor = None,
                 c_0: torch.Tensor = None) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the LSTM model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pair.
         h_0 : torch.Tensor, optional
             Initial hidden state, by default 0.

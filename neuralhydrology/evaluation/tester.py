@@ -82,16 +82,26 @@ class BaseTester(object):
 
     def _set_device(self):
         if self.cfg.device is not None:
-            if "cuda" in self.cfg.device:
+            if self.cfg.device.startswith("cuda"):
                 gpu_id = int(self.cfg.device.split(':')[-1])
                 if gpu_id > torch.cuda.device_count():
                     raise RuntimeError(f"This machine does not have GPU #{gpu_id} ")
                 else:
                     self.device = torch.device(self.cfg.device)
+            elif self.cfg.device == "mps":
+                if torch.backends.mps.is_available():
+                    self.device = torch.device("mps")
+                else:
+                    raise RuntimeError("MPS device is not available.")
             else:
                 self.device = torch.device("cpu")
         else:
-            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+            if torch.cuda.is_available():
+                self.device = torch.device("cuda:0")
+            elif torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+            else:
+                self.device = torch.device("cpu")
 
     def _load_run_data(self):
         """Load run specific data from run directory"""
@@ -287,7 +297,7 @@ class BaseTester(object):
 
                 if metrics:
                     for target_variable in self.cfg.target_variables:
-                        # stack dates and time_steps so we don't just evaluate every 24H when use_frequencies=[1D, 1H]
+                        # stack dates and time_steps so we don't just evaluate every 24h when use_frequencies=[1D, 1h]
                         obs = xr.isel(time_step=slice(-frequency_factor, None)) \
                             .stack(datetime=['date', 'time_step']) \
                             .drop_vars({'datetime', 'date', 'time_step'})[f"{target_variable}_obs"]
@@ -386,7 +396,12 @@ class BaseTester(object):
 
         # save metrics any time this function is called, as long as they exist
         if self.cfg.metrics and results is not None:
-            df = metrics_to_dataframe(results, self.cfg.metrics)
+            metrics_list = self.cfg.metrics
+            if isinstance(metrics_list, dict):
+                metrics_list = list(set(metrics_list.values()))
+            if "all" in metrics_list:
+                metrics_list = get_available_metrics()
+            df = metrics_to_dataframe(results, metrics_list, self.cfg.target_variables)
             metrics_file = parent_directory / f"{self.period}_metrics.csv"
             df.to_csv(metrics_file)
             LOGGER.info(f"Stored metrics at {metrics_file}")
@@ -417,7 +432,9 @@ class BaseTester(object):
             for data in loader:
 
                 for key in data:
-                    if not key.startswith('date'):
+                    if key.startswith('x_d'):
+                        data[key] = {k: v.to(self.device) for k, v in data[key].items()}
+                    elif not key.startswith('date'):
                         data[key] = data[key].to(self.device)
                 data = model.pre_model_hook(data, is_train=False)
                 predictions, loss = self._get_predictions_and_loss(model, data)

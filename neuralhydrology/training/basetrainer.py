@@ -286,7 +286,9 @@ class BaseTrainer(object):
                 break
 
             for key in data.keys():
-                if not key.startswith('date'):
+                if key.startswith('x_d'):
+                    data[key] = {k: v.to(self.device) for k, v in data[key].items()}
+                elif not key.startswith('date'):
                     data[key] = data[key].to(self.device)
 
             # apply possible pre-processing to the batch before the forward pass
@@ -346,10 +348,20 @@ class BaseTrainer(object):
                     raise RuntimeError(f"This machine does not have GPU #{gpu_id} ")
                 else:
                     self.device = torch.device(self.cfg.device)
+            elif self.cfg.device == "mps":
+                if torch.backends.mps.is_available():
+                    self.device = torch.device("mps")
+                else:
+                    raise RuntimeError("MPS device is not available.")
             else:
                 self.device = torch.device("cpu")
         else:
-            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+            if torch.cuda.is_available():
+                self.device = torch.device("cuda:0")
+            elif torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+            else:
+                self.device = torch.device("cpu")
         LOGGER.info(f"### Device {self.device} will be used for training")
 
     def _create_folder_structure(self):

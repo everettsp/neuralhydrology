@@ -601,9 +601,9 @@ def mean_peak_timing(obs: DataArray,
         Size of window to consider on each side of the observed peak for finding the simulated peak. That is, the total
         window length to find the peak in the simulations is :math:`2 * \\text{window} + 1` centered at the observed
         peak. The default depends on the temporal resolution, e.g. for a resolution of '1D', a window of 3 is used and 
-        for a resolution of '1H' the the window size is 12.
+        for a resolution of '1h' the the window size is 12.
     resolution : str, optional
-        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1H' for hourly.
+        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1h' for hourly.
     datetime_coord : str, optional
         Name of datetime coordinate. Tried to infer automatically if not specified.
         
@@ -634,7 +634,7 @@ def mean_peak_timing(obs: DataArray,
 
     if window is None:
         # infer a reasonable window size
-        window = max(int(utils.get_frequency_factor('12H', resolution)), 3)
+        window = max(int(utils.get_frequency_factor('12h', resolution)), 3)
 
     # evaluate timing
     timing_errors = []
@@ -688,10 +688,10 @@ def missed_peaks(obs: DataArray,
         Size of window to consider on each side of the observed peak for finding the simulated peak. That is, the total
         window length to find the peak in the simulations is :math:`2 * \\text{window} + 1` centered at the observed
         peak. The default depends on the temporal resolution, e.g. for a resolution of '1D', a window of 1 is used and 
-        for a resolution of '1H' the the window size is 12. Note that this is a different default window size than is
+        for a resolution of '1h' the the window size is 12. Note that this is a different default window size than is
         used in the peak-timing metric for '1D'.
     resolution : str, optional
-        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1H' for hourly.
+        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1h' for hourly.
     percentile: float, optional
         Only consider peaks above this flow percentile (0, 100).
     datetime_coord : str, optional
@@ -725,7 +725,7 @@ def missed_peaks(obs: DataArray,
 
     # infer a reasonable window size
     if window is None:
-        window = max(int(utils.get_frequency_factor('12H', resolution)), 1)
+        window = max(int(utils.get_frequency_factor('12h', resolution)), 1)
 
     # count missed peaks
     missed_events = 0
@@ -810,7 +810,7 @@ def calculate_all_metrics(obs: DataArray,
     sim : DataArray
         Simulated time series.
     resolution : str, optional
-        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1H' for hourly.
+        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1h' for hourly.
     datetime_coord : str, optional
         Datetime coordinate in the passed DataArray. Tried to infer automatically if not specified.
         
@@ -862,7 +862,7 @@ def calculate_metrics(obs: DataArray,
     metrics : List[str]
         List of metric names.
     resolution : str, optional
-        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1H' for hourly.
+        Temporal resolution of the time series in pandas format, e.g. '1D' for daily and '1h' for hourly.
     datetime_coord : str, optional
         Datetime coordinate in the passed DataArray. Tried to infer automatically if not specified.
 

@@ -27,7 +27,7 @@ per_basin_test_periods_file:
 # fixed seed, leave empty to use a random seed
 seed:
 
-# which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu or None]
+# which GPU (id) to use [in format of cuda:0, cuda:1 etc, or cpu, mps or None]
 device: cuda:0
 
 # --- Validation configuration ---------------------------------------------------------------------
@@ -181,13 +181,13 @@ clip_gradient_norm: 1
 # https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html?highlight=frequency#timeseries-offset-aliases
 #use_frequencies:
 #- 1D
-#- 1H
+#- 1h
 
 # Subset of frequencies from use_frequencies that are "evaluation-only", i.e., the model will get input and produce
 # output in the frequencies listed here, but they will not be considered in the calculation of loss and regularization
 # terms.
 #no_loss_frequencies:
-#- 1H
+#- 1h
 
 # Defines which time steps are used to calculate the loss. Can't be larger than seq_length.
 # If use_frequencies is used, this needs to be a dict mapping each frequency to a predict_last_n-value, else an int.
@@ -241,7 +241,7 @@ forcings: maurer_extended
 # list of variables. E.g., to use precipitation from daymet for daily and from nldas_hourly for hourly predictions:
 #   1D:
 #     - prcp(mm/day)_daymet
-#   1H:
+#   1h:
 #     - total_precipitation_nldas_hourly
 dynamic_inputs:
 - prcp(mm/day)

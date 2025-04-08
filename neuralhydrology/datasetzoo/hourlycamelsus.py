@@ -87,14 +87,14 @@ class HourlyCamelsUS(camelsus.CamelsUS):
             for val in self.cfg.dynamic_inputs.values():
                 all_features = all_features + val
         elif isinstance(self.cfg.dynamic_inputs, list):
-            all_features = all_features + self.cfg.dynamic_inputs
+            all_features = all_features + self.cfg.dynamic_inputs_flattened
 
         # catch also QObs(mm/d)_shiftX or _copyX features
         if any([x.startswith("QObs(mm/d)") for x in all_features]):
             # add daily discharge from CAMELS, using daymet to get basin area
             _, area = camelsus.load_camels_us_forcings(self.cfg.data_dir, basin, "daymet")
             discharge = camelsus.load_camels_us_discharge(self.cfg.data_dir, basin, area)
-            discharge = discharge.resample('1H').ffill()
+            discharge = discharge.resample('1h').ffill()
             df["QObs(mm/d)"] = discharge
 
         # only warn for missing netcdf files once for each forcing product
@@ -260,7 +260,7 @@ def load_hourly_us_stage(data_dir: Path, basin: str) -> pd.Series:
                      index_col=['datetime'],
                      parse_dates=['datetime'],
                      usecols=['datetime', 'gauge_height_ft'])
-    df = df.resample('H').mean()
+    df = df.resample('h').mean()
     df["gauge_height_m"] = df["gauge_height_ft"] * 0.3048
 
     return df["gauge_height_m"]

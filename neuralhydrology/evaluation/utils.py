@@ -1,11 +1,11 @@
+import itertools
 import pickle
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, Union
+from typing import Dict, Iterable
 
 import numpy as np
 import pandas as pd
-import xarray
 from ruamel.yaml import YAML
 
 
@@ -29,7 +29,7 @@ def load_basin_id_encoding(run_dir: Path) -> Dict[str, int]:
 
 
 
-def metrics_to_dataframe(results: dict, metrics: Iterable[str]) -> pd.DataFrame:
+def metrics_to_dataframe(results: dict, metrics: Iterable[str], targets: Iterable[str]) -> pd.DataFrame:
     """Extract all metric values from result dictionary and convert to pandas.DataFrame
 
     Parameters
@@ -38,6 +38,8 @@ def metrics_to_dataframe(results: dict, metrics: Iterable[str]) -> pd.DataFrame:
         Dictionary, containing the results of the model evaluation as returned by the `Tester.evaluate()`.
     metrics : Iterable[str]
         Iterable of metric names (without frequency suffix).
+    targets : Iterable[str]
+        Iterable of target variable names.
 
     Returns
     -------
@@ -47,11 +49,13 @@ def metrics_to_dataframe(results: dict, metrics: Iterable[str]) -> pd.DataFrame:
     metrics_dict = defaultdict(dict)
     for basin, basin_data in results.items():
         for freq, freq_results in basin_data.items():
-            for metric in metrics:
+            for target, metric in itertools.product(targets, metrics):
                 metric_key = metric
+                if len(targets) > 1:
+                    metric_key = f"{target}_{metric}"
                 if len(basin_data) > 1:
                     # For multi-frequency runs, metrics include a frequency suffix.
-                    metric_key = f"{metric}_{freq}"
+                    metric_key = f"{metric_key}_{freq}"
                 if metric_key in freq_results.keys():
                     metrics_dict[basin][metric_key] = freq_results[metric_key]
                 else:

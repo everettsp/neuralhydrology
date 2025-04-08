@@ -83,7 +83,7 @@ General experiment configurations
    this run.
 
 -  ``device``: Which device to use in format of ``cuda:0``, ``cuda:1``,
-   etc, for GPUs or ``cpu``
+   etc, for GPUs, ``mps`` for MacOS with Metal support, or ``cpu``
 
 Validation settings
 -------------------
@@ -407,7 +407,7 @@ Training settings
    sequence length, else an int.
 
 -  ``forecast_seq_length``: Length of the forecast sequence. This is the
-   number of timesteps in the total ``seq_length`` that are part of the 
+   number of timesteps from the total ``seq_length`` that are part of the 
    forecast rather than the hindcast. Note that this does not add to the
    total ``seq_length``, and thus, the forecast sequence length must be
    less than the total sequence length.
@@ -416,7 +416,8 @@ Training settings
    data overlaps with hindcast data. This does not add to the
    ``forecast_sequence_length``, and must be no larger than the
    ``forecast_sequence_length``. This is used for 
-   ``ForecastOverlapMSERegularization`` in the ``handoff_forecast_model``.
+   ``ForecastOverlapMSERegularization`` in the ``handoff_forecast_model``
+   and for the ``stacked_lstm`` model.
 
 -  ``predict_last_n``: Defines which time steps are used to calculate
    the loss, counted backwards. Can't be larger than ``seq_length``.
@@ -514,8 +515,12 @@ Data settings
        dynamic_inputs:
          1D:
            - prcp(mm/day)_daymet
-         1H:
+         1h:
            - total_precipitation_nldas_hourly
+   
+   When ``nan_handling_method`` is set, this can also be specified as a list of lists.
+   Then, each inner list defines a feature group. Refer to ``nan_handling_method`` for a
+   description of how this can be used to handle missing input data.
 
 -  ``forecast_inputs``: These are dynamic features (exactly like ``dyncamic_inputs``)
    that are used as inputs to the forecasting portion of a forecast model. This allows
@@ -572,6 +577,32 @@ Data settings
    missing data. Autoregressive inputs only work with models that support autoregression
    and will throw an error if they are included in a config file for a model that does
    not support autoregression. Leave empty if none should be used. 
+
+- ``nan_handling_method``: One of [``masked_mean``, ``input_replacing``, ``attention``].
+   These strategies can be used to train and evaluate models when some of the input data is
+   missing some of the time. To use this, specify ``dynamic_inputs`` as a list of lists. Each
+   list then defines a feature group. 
+   
+   - The ``masked_mean`` strategy will embed each of these feature
+     groups with its own embedding network (defined via ``dynamics_embedding``) and then average
+     the embeddings of all groups that are not missing at a given timestep.
+   - The ``attention`` strategy is a more general version of masked_mean. It uses an attention
+     mechanism where the query is the concatenation of static attributes (or their embedding) and
+     a positional encoding, the keys and values are the embeddings of each feature group.
+   - The ``input_replacing`` strategy replaces all NaNs with zeros, concatenates all features from
+     all feature groups, and adds a binary flag for each feature group to indicate missing values.
+
+- ``nan_sequence_probability``: If set, the dataset will yield samples where each feature group is
+   missing with the specified probability during training. Any combination of feature groups can be dropped,
+   but the dataset takes care not to drop all sequences of all groups at the same time.
+
+- ``nan_step_probability``: Same as ``nan_sequence_probability`` except it defines the probability of
+   dropping individual time steps of a feature group, rather than the whole sequence. Note that it is
+   possible for all three time steps to be dropped at the same time.
+
+- ``nan_handling_pos_encoding_size``: Defines the size of a sine/cosine positional encoding to be added
+   to each feature group (for ``masked_mean``), the concatenated vector of feature groups (for ``input_replacing``),
+   or to the inputs of the query embedding (for ``attention``).
 
 -  ``random_holdout_from_dynamic_features``: Dictionary to define timeseries
    features to remove random sections of data from. This allows for conducting

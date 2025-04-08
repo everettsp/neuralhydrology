@@ -38,12 +38,12 @@ class HybridModel(BaseModel):
         if self.cfg.initial_forget_bias is not None:
             self.lstm.bias_hh_l0.data[self.cfg.hidden_size:2 * self.cfg.hidden_size] = self.cfg.initial_forget_bias
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : Dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Dictionary, containing input features as key-value pairs.
 
         Returns
@@ -62,7 +62,10 @@ class HybridModel(BaseModel):
         lstm_out = self.linear(lstm_out)
 
         # get predictions
-        pred = self.conceptual_model(x_conceptual=data['x_d_c'][:, self.cfg.warmup_period:, :], lstm_out=lstm_out)
+        # TODO: Make the conceptual model take a dict of inputs rather than a concatenated tensor.
+        x_conceptual = torch.cat([data['x_d'][k][:, self.cfg.warmup_period:, :]
+                                  for k in self.cfg.dynamic_conceptual_inputs], axis=-1)
+        pred = self.conceptual_model(x_conceptual=x_conceptual, lstm_out=lstm_out)
 
         return pred
 

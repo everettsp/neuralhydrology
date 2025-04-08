@@ -62,6 +62,8 @@ class ODELSTM(BaseModel):
             raise ValueError('ODELSTM needs at least two frequencies.')
         if isinstance(cfg.dynamic_inputs, dict) or isinstance(cfg.hidden_size, dict):
             raise ValueError('ODELSTM does not support per-frequency input variables or hidden sizes.')
+        if isinstance(cfg.dynamic_inputs[0], list):
+            raise ValueError('ODELSTM does not support input feature groups.')
 
         # Note: be aware that frequency_factors and slice_timesteps have a slightly different meaning here vs. in
         # MTSLSTM. Here, the frequency_factor is relative to the _lowest_ (not the next-lower) frequency.
@@ -75,6 +77,7 @@ class ODELSTM(BaseModel):
         # start to count the number of inputs
         self.input_size = len(cfg.dynamic_inputs + cfg.static_attributes + cfg.hydroatlas_attributes +
                               cfg.evolving_attributes)
+        self._dynamic_inputs = cfg.dynamic_inputs
 
         if cfg.use_basin_id_encoding:
             self.input_size += cfg.number_of_basins
@@ -128,7 +131,7 @@ class ODELSTM(BaseModel):
         """Concat all different inputs to the time series input. """
         suffix = f"_{freq}"
         # transpose to [seq_length, batch_size, n_features]
-        x_d = data[f'x_d{suffix}'].transpose(0, 1)
+        x_d = torch.cat([data[f'x_d{suffix}'][k] for k in self._dynamic_inputs], dim=-1).transpose(0, 1)
 
         # concat all inputs
         if f'x_s{suffix}' in data and 'x_one_hot' in data:
@@ -177,12 +180,12 @@ class ODELSTM(BaseModel):
 
         return torch.cat(x_d_randomized, dim=0)
 
-    def forward(self, data: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, data: dict[str, torch.Tensor | dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         """Perform a forward pass on the ODE-LSTM model.
 
         Parameters
         ----------
-        data : Dict[str, torch.Tensor]
+        data : dict[str, torch.Tensor | dict[str, torch.Tensor]]
             Input data for the forward pass. See the documentation overview of all models for details on the dict keys.
 
         Returns

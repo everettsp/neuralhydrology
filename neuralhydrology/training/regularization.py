@@ -121,8 +121,11 @@ class ForecastOverlapMSERegularization(BaseRegularization):
         The run configuration.
     """
 
+    def __init__(self, cfg: Config, weight: float = 1.0):
+        super(ForecastOverlapMSERegularization, self).__init__(cfg, name='forecast_overlap', weight=weight)
+
     def forward(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor],
-                *args) -> torch.Tensor:
+                other_model_output: Dict[str, Dict[str, torch.Tensor]]) -> torch.Tensor:
         """Calculate the squared difference between hindcast and forecast model during overlap.
 
         Does not work with multi-frequency models.
@@ -130,9 +133,12 @@ class ForecastOverlapMSERegularization(BaseRegularization):
         Parameters
         ----------
         prediction : Dict[str, torch.Tensor]
-            Dictionary containing ``y_hindcast_overlap}`` and ``y_forecast_overlap``.
+            Not used.
         ground_truth : Dict[str, torch.Tensor]
-            Dictionary continaing ``y_{frequency}`` for !one! frequency.
+            Not used.
+        other_model_output : Dict[str, Dict[str, torch.Tensor]]
+            Dictionary containing ``y_forecast_overlap`` and ``y_hindcast_overlap``, which are
+            both dictionaries containing keys to relevant model outputs.
 
         Returns
         -------
@@ -144,12 +150,12 @@ class ForecastOverlapMSERegularization(BaseRegularization):
         ValueError if y_hindcast_overlap or y_forecast_overlap is not present in model output.
         """
         loss = 0
-        if 'y_hindcast_overlap' not in prediction or not prediction['y_hindcast_overlap']:
+        if 'y_hindcast_overlap' not in other_model_output or not other_model_output['y_hindcast_overlap']:
             raise ValueError('y_hindcast_overlap is not present in the model output.')
-        if 'y_forecast_overlap' not in prediction or not prediction['y_forecast_overlap']:
+        if 'y_forecast_overlap' not in other_model_output or not other_model_output['y_forecast_overlap']:
             raise ValueError('y_forecast_overlap is not present in the model output.')
-        for key in prediction['y_hindcast_overlap']:
-            hindcast = prediction['y_hindcast_overlap'][key]
-            forecast = prediction['y_forecast_overlap'][key]
+        for key in other_model_output['y_hindcast_overlap']:
+            hindcast = other_model_output['y_hindcast_overlap'][key]
+            forecast = other_model_output['y_forecast_overlap'][key]
             loss += torch.mean((hindcast - forecast)**2)
         return loss

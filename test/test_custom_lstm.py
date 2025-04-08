@@ -23,7 +23,7 @@ def test_model_equality(get_config: Fixture[Callable[[str], dict]], custom_lstm_
 
     # create random inputs
     data = {
-        'x_d': torch.rand((config.batch_size, 50, len(config.dynamic_inputs))),
+        'x_d': {k: torch.rand((config.batch_size, 50, 1)) for k in config.dynamic_inputs},
         'x_s': torch.rand((config.batch_size, len(config.static_attributes)))
     }
 

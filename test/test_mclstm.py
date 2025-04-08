@@ -20,8 +20,8 @@ def test_mass_conservation():
 
     # create random inputs
     data = {
-        'x_d':
-            torch.rand((1, 25, 3))  # [batch size, sequence length, total number of time series inputs]
+        # [batch size, sequence length, total number of time series inputs]
+        'x_d': {k: torch.rand((1, 25, 1)) for k in config.dynamic_inputs + config.mass_inputs}
     }
 
     # get model outputs and intermediate states
@@ -31,7 +31,7 @@ def test_mass_conservation():
     cumsum_system = output["m_out"].sum(-1).cumsum(-1) + output["c"].sum(-1)
 
     # the accumulated mass of the inputs at each time step
-    cumsum_input = data["x_d"][:, :, 0].cumsum(-1)
+    cumsum_input = data["x_d"]['prcp(mm/day)'][:, :, 0].cumsum(-1)
 
     # check if the total mass is conserved at every timestep of the forward pass
     assert torch.allclose(cumsum_system, cumsum_input)
