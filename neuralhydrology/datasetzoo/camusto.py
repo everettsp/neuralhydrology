@@ -29,7 +29,6 @@ def load_timeseries(data_dir:Path, basin:str, forcing:str) -> pd.DataFrame:
     return df
 
 
-
 class CamusTO(BaseDataset):
     """Template class for adding a new data set.
     
@@ -132,9 +131,6 @@ class CamusTO(BaseDataset):
 
         df = pd.concat(dfs, axis=1)
 
-
-
-
         # collapse all input features to a single list, to check for 'QObs(mm/d)'.
         all_features = self.cfg.target_variables
         if isinstance(self.cfg.dynamic_inputs, dict):
@@ -164,7 +160,7 @@ class CamusTO(BaseDataset):
         return df
 
     def _load_attributes(self) -> pd.DataFrame:
-        """Load dataset attributes
+        """Load basin attributes
         
         This function is used to load basin attribute data (e.g. CAMELS catchments attributes) as a basin-indexed 
         dataframe with features in columns.
@@ -174,26 +170,40 @@ class CamusTO(BaseDataset):
         pd.DataFrame
             Basin-indexed DataFrame, containing the attributes as columns.
         """
-        
-        attribute_files = ["hydromet.csv", "landuse.csv"]
-
-        for f in attribute_files:
-            if not (Path(self.cfg.data_dir) / f).exists():
-                raise FileNotFoundError()
-            if f not in ATTRIBUTE_FILES:
-                raise ValueError(f"attribute file '{f}' not available; choices include{ATTRIBUTE_FILES}")
+        return load_attributes(self.cfg.data_dir)
 
 
-        dfs= [pd.read_csv(Path(self.cfg.data_dir) / f, index_col=0) for f in attribute_files]
-        for df in dfs:
-            df.index.name = "TRCAID"
-        df = pd.concat(dfs, axis=1)
-        df = df.loc[~df.isnull().any(axis=1),:] # remove basins with missing values
-        df = df.loc[:,~(df.std() < 1E-10)] # remove attributes with std of 0
+def load_attributes(data_dir:Path) -> pd.DataFrame:
+    """Load basin attributes from csv files
+    
+    This function is used to load basin attribute data (e.g. CAMELS catchments attributes) as a basin-indexed 
+    dataframe with features in columns.
+    
+    Parameters
+    ----------
+    data_dir : Path
+        Path to the directory containing the attribute files.
+
+    Returns
+    -------
+    pd.DataFrame
+        Basin-indexed DataFrame, containing the attributes as columns.
+    """
+    
+    attribute_files = ["hydromet.csv", "landuse.csv"]
+
+    for f in attribute_files:
+        if not (data_dir / f).exists():
+            raise FileNotFoundError()
+        if f not in ATTRIBUTE_FILES:
+            raise ValueError(f"attribute file '{f}' not available; choices include{ATTRIBUTE_FILES}")
 
 
-        return df
-
-
-
+    dfs= [pd.read_csv(data_dir / f, index_col=0) for f in attribute_files]
+    for df in dfs:
+        df.index.name = "TRCAID"
+    df = pd.concat(dfs, axis=1)
+    df = df.loc[~df.isnull().any(axis=1),:] # remove basins with missing values
+    df = df.loc[:,~(df.std() < 1E-10)] # remove attributes with std of 0
+    return df
 

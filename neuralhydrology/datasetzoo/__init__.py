@@ -110,4 +110,6 @@ _datasetZooRegistry.register_dataset_class("lamah_a", LamaH)
 _datasetZooRegistry.register_dataset_class("lamah_b", LamaH)
 _datasetZooRegistry.register_dataset_class("lamah_c", LamaH)
 _datasetZooRegistry.register_dataset_class("caravan", Caravan)
+_datasetZooRegistry.register_dataset_class("hysets", Hysets)
+_datasetZooRegistry.register_dataset_class("camusto", CamusTO)
 

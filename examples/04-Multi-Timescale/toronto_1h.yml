@@ -1,7 +1,7 @@
 # --- Experiment configurations --------------------------------------------------------------------
 
 # experiment name, used as folder name
-experiment_name: test_1h
+experiment_name: cuda_ex8
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
 train_basin_file: all_basins_trca.txt
@@ -22,10 +22,10 @@ device: cuda:0
 # --- Validation configuration ---------------------------------------------------------------------
 
 # specify after how many epochs to perform validation
-validate_every: 3
+validate_every: 4
 
 # specify how many random basins to use for validation
-validate_n_random_basins: 1
+validate_n_random_basins: 4
 
 # specify which metrics to calculate during validation (see neuralhydrology.evaluation.metrics)
 # this can either be a list or a dictionary. If a dictionary is used, the inner keys must match the name of the
@@ -64,19 +64,21 @@ output_dropout: 0.4
 optimizer: Adam
 
 # specify loss [MSE, NSE, RMSE]
-loss: MSE
+loss: NSE
 
 # specify learning rates to use starting at specific epochs (0 is the initial learning rate)
 learning_rate:
-  0: 1e-2
-  30: 5e-3
-  40: 1e-3
+  0: 0.1
+  20: 0.01
+  40: 0.001
+  60: 0.0001
+  80: 1e-05
 
 # Mini-batch size
 batch_size: 256
 
 # Number of training epochs
-epochs: 128
+epochs: 256
 
 # If a value, clips the gradients during training to that norm.
 clip_gradient_norm: 1
@@ -134,30 +136,6 @@ clip_targets_to_zero:
 use_basin_id_encoding: True
 
 static_attributes:
-  - precip_mean
-  - precip_high
-  - precip_mean_monthly
-  - precip_mean_annual
-  - high_precip_freq
-  - high_precip_dur
-  - low_precip_freq
-  - low_precip_dur
-  - basestage_index
-  - stage_mean
-  - stage_high
-  - stage_low
-  - high_stage_freq
-  - high_stage_dur
-  - low_stage_dur
-  - zero_stage_freq
-  - stage95
-  - stage5
-  - stage_adf
-  - stage_adf_p
-  - stage_adf_cv1
-  - stage_adf_cv5
-  - stage_adf_cv10
-  - stage_seasonality
   - q_mean
   - q_high
   - q_low
@@ -165,11 +143,6 @@ static_attributes:
   - high_q_dur
   - q95
   - q5
-  - q_adf
-  - q_adf_cv1
-  - q_adf_cv5
-  - q_adf_cv10
-  - q_seasonality
   - built_imperv(frac)
   - built_perv(frac)
   - forest(frac)
