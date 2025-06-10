@@ -9,9 +9,9 @@ use_frequencies:
   - 1D
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
-train_basin_file: 1_basin.txt
-validation_basin_file: 1_basin.txt
-test_basin_file: 1_basin.txt
+train_basin_file: 516-camels-basins.txt
+validation_basin_file: 516-camels-basins.txt
+test_basin_file: 516-camels-basins.txt
 
 # training, validation and test time periods (format = 'dd/mm/yyyy')
 train_start_date: "01/10/1999"
@@ -152,7 +152,7 @@ dynamic_inputs:
 
 # which columns to use as target
 target_variables:
-  - QObs_CAMELS(mm/h)
+  - qobs_mm_per_hour
 
 # clip negative predictions to zero for all variables listed below. Should be a list, even for single variables.
 clip_targets_to_zero:

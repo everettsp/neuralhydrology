@@ -137,17 +137,3 @@ use_basin_id_encoding: True
 
 static_attributes:
   - q_mean
-  - q_high
-  - q_low
-  - high_q_freq
-  - high_q_dur
-  - q95
-  - q5
-  - built_imperv(frac)
-  - built_perv(frac)
-  - forest(frac)
-  - rock(frac)
-  - soil(frac)
-  - transportation(frac)
-  - water(frac)
-  - wetland(frac)
