@@ -6,7 +6,7 @@ import pandas as pd
 import xarray
 import netCDF4 as nc
 import numpy as np
-
+import xarray as xr
 
 from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.utils.config import Config
@@ -86,7 +86,18 @@ def official_to_hysets_id(data_dir:Path) -> dict:
 def hysets_to_official_id(data_dir:Path) -> dict:
     return {v: k for k, v in official_to_hysets_id(data_dir=data_dir).items()}
 
-def load_hysets_attributes(data_dir: Path, basins: List[str] = [], augmented:bool=True, metadata:bool=False) -> pd.DataFrame:
+import geopandas as gpd
+
+def load_hysets_boundaries(data_dir: Path) -> gpd.GeoDataFrame:
+    boundaries = gpd.read_file(data_dir / "HYSETS_watershed_boundaries.zip!HYSETS_watershed_boundaries_20200730.shp")
+    boundaries = boundaries.set_index("OfficialID", drop=False)
+    #boundaries["geometry"] = gpd.GeoSeries.from_wkt(boundaries["geometry"])
+    attributes = load_hysets_attributes(data_dir=data_dir)
+    basins = gpd.GeoDataFrame(boundaries.join(attributes, how="inner"))
+    return basins
+
+
+def load_hysets_attributes(data_dir: Path, basins: List[str] = [], augmented:bool=True, metadata:bool=False, filter:bool=False) -> pd.DataFrame:
     """Load CAMELS GB attributes from the dataset provided by [#]_
 
     Parameters
@@ -125,44 +136,16 @@ def load_hysets_attributes(data_dir: Path, basins: List[str] = [], augmented:boo
     df.index.name = "Official_ID"
 
     if augmented:
-        additional_file = data_dir.parent / "HYSETS_hydromet_properties_reanalysis.txt"
+        additional_file = data_dir / "additional_attributes.txt"
 
         if not additional_file.exists():
             print('warning: cannot find augmented attribute file, using default hysets attributes')
             pass
         else:
-            keep_cols = [
-                'precip_mean(mm/d)',
-                'precip_high(mm/d)',
-                'precip_low(mm/d)',
-                'precip_mean(mm/mo)',
-                'precip_mean(mm/y)', 
-                'precip_high_freq(d/yr)',
-                'precip_high_dur(d)', 
-                'precip_low_freq(d/yr)', 
-                'precip_low_dur(d)',
-                'baseflow_index(-)', 
-                'q_mean(mm/d)', 
-                'q_high(mm/d)', 
-                'q_low(mm/d)',
-                'q_high_freq(d/yr)', 
-                'q_high_dur(d)', 
-                'q_low_dur(d)',
-                'q_zero_freq(d/yr)', 
-                'q_95', 
-                'q_5', 
-                'runoff_ratio',
-                'q_seasonality(-)', 
-                'tmean_seasonality(-)', 
-                'tmean_alltime(C)',
-                'tmax_annual_mean(C)', 
-                'tmin_annual_mean(C)', 
-                'q_var(mm2/d2)']
-            
             df_hydromet = pd.read_csv(additional_file, index_col=0, low_memory=False)
-            df_hydromet = df_hydromet.loc[:, keep_cols]
+            #df_hydromet = df_hydromet.loc[:, keep_cols]
             df = df.merge(df_hydromet,left_index=True,right_index=True)
-            del keep_cols
+            #del keep_cols
 
 
     if not metadata:
@@ -170,20 +153,21 @@ def load_hysets_attributes(data_dir: Path, basins: List[str] = [], augmented:boo
         keep_cols = [col for col in df.columns if not any([flag.lower() in col.lower() for flag in flags])]
         df = df.loc[:,keep_cols]
 
-    # if an attribute is nan for fewer then 20 basins, remove basins
-    few_missing_basins = df.columns[(df.isnull().sum() > 0) & (df.isnull().sum() < 20)]
-    remove_basins = []
-    for attribute in few_missing_basins:
-        remove_basins = remove_basins + df.index[df.loc[:,attribute].isnull()].to_list()
+    if filter:
+        # if an attribute is nan for fewer then 20 basins, remove basins
+        few_missing_basins = df.columns[(df.isnull().sum() > 0) & (df.isnull().sum() < 20)]
+        remove_basins = []
+        for attribute in few_missing_basins:
+            remove_basins = remove_basins + df.index[df.loc[:,attribute].isnull()].to_list()
 
-    remove_basins = np.unique(remove_basins)
-    keep_basins = [basin not in remove_basins for basin in df.index]
-    df = df.loc[keep_basins,:]
+        remove_basins = np.unique(remove_basins)
+        keep_basins = [basin not in remove_basins for basin in df.index]
+        df = df.loc[keep_basins,:]
 
     # if an attribute is nan for 20 or more basins, remove attributes
-    remove_attributes = df.columns[df.isnull().sum() >= 20]
-    keep_attributes = [attribute for attribute in df.columns  if attribute not in remove_attributes]
-    df = df.loc[:,keep_attributes]
+        remove_attributes = df.columns[df.isnull().sum() >= 20]
+        keep_attributes = [attribute for attribute in df.columns  if attribute not in remove_attributes]
+        df = df.loc[:,keep_attributes]
 
 
 
@@ -197,7 +181,7 @@ def load_hysets_attributes(data_dir: Path, basins: List[str] = [], augmented:boo
     return df
 
 
-def load_hysets_timeseries(data_dir: Path, basin: str, forcing="QC_stations", swe_forcing="ERA5Land_SWE") -> pd.DataFrame:
+def load_hysets_timeseries(data_dir: Path, basin: str, forcing="ERA5", version="HYSETS_2023_update") -> pd.DataFrame:
     """Load the time series data for one basin of the HYSETS data set.
 
     Parameters
@@ -213,46 +197,42 @@ def load_hysets_timeseries(data_dir: Path, basin: str, forcing="QC_stations", sw
         Time-indexed DataFrame, containing the time series data (forcings + discharge) data.
     """
 
+
+    
+    VERSIONS = ["HYSETS_2020", "HYSETS_2023_update"]
+
+    if version not in VERSIONS:
+        raise ValueError(f"version '{version}' not available, choices include: {VERSIONS}")
+
     if not data_dir.is_dir():
         raise OSError(f"{data_dir} does not exist")
     
     FORCINGS = ["QC_stations","non_QCstations","SCDNA","NRCAN","Livneh","ERA5","ETA5Land"]
-    SWE_FORCINGS = [None, "SNODAS_SWE","ERA5Land_SWE"]
+
+
+    nc_file = data_dir / f'{version}_{forcing}.nc'
 
     if forcing not in FORCINGS:
         raise ValueError(f"forcing '{forcing}' not available, choices include: {FORCINGS}")
-    elif not (data_dir / f'HYSETS_2020_{forcing}.nc').exists():
+    elif not (nc_file).exists():
         raise FileNotFoundError("forcing '{}' among available forcings, but nc file not found")
 
-    if swe_forcing not in SWE_FORCINGS:
-        raise ValueError(f"swe forcing '{swe_forcing}' not available, choices include: {SWE_FORCINGS}")
-    
-    elif swe_forcing is not None:
-        if not (data_dir / f'HYSETS_2020_{swe_forcing}.nc').exists():
-            raise FileNotFoundError("forcing '{swe_forcing}' among available forcings, but nc file not found")
-
-    columns = ['q(mm/d)','precip(mm/d)','tmax(C)','tmin(C)']
 
     hysets_id = official_to_hysets_id(data_dir=data_dir)[basin]
 
-    with nc.Dataset(data_dir / f'HYSETS_2020_{forcing}.nc') as ds:
-        data = np.concatenate([ds[x][hysets_id == ds['watershedID'][:].data].data.reshape(-1,1) 
-                    for x in ['discharge','pr','tasmax','tasmin']],axis=1)
+    
+    with xr.open_dataset(nc_file) as f:
+        watershed_ind = f.watershed[f.watershedID.values == hysets_id]
+        data_vars = [var for var in f.data_vars if 'watershed' in f[var].dims and 'time' in f[var].dims]
+        df = f.sel(watershed=watershed_ind)[data_vars].to_dataframe()
+        #df.index = [x[1] for x in df.index]
         
-    if swe_forcing is not None:
-        with nc.Dataset(data_dir / f'HYSETS_2020_{swe_forcing}.nc') as ds:
-            swe = ds['swe'][hysets_id == ds['watershedID'][:].data].data.reshape(-1,1)
-        columns = columns + ['swe(mm/d)']
-            
-        data = np.concatenate([data,swe],axis=1)
-
-    dates =  pd.date_range('1950-1-1', periods=25202, freq='D')
-
-    df = pd.DataFrame(index=dates,data=data, columns=columns)
-
+    dates =  pd.date_range('1950-1-1', periods=27028, freq='D')
+    df.index = dates
+    
     area = load_hysets_attributes(data_dir=data_dir, basins=[basin])["Drainage_Area_km2"].values
     # convert from m3/s to mm/day
-    df['q(mm/d)'] = df['q(mm/d)'] * 86400 * 10**3 / (area * 10**6) 
+    df['discharge'] *= 86400 * 10**3 / (area * 10**6) 
     df.index.name = 'date'
     return df
 

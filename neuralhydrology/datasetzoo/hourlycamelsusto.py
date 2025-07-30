@@ -96,6 +96,9 @@ class HourlyCamelsUSTO(camelsus.CamelsUS):
             df["pressure"] = df["pressure"] / 1000  # convert kPa to Pa
 
         df.index.name = "date"
+        
+
+        frequencies = self.cfg.use_frequencies
         df = df.resample('1h').ffill()
 
         """
@@ -124,7 +127,7 @@ class HourlyCamelsUSTO(camelsus.CamelsUS):
         elif isinstance(self.cfg.dynamic_inputs, list):
             all_features = all_features + self.cfg.dynamic_inputs_flattened
 
-        df = df[all_features].copy()
+        #df = df[all_features]
         # catch also QObs(mm/d)_shiftX or _copyX features
         """
         if any([x.startswith("QObs(mm/d)") for x in all_features]):
@@ -169,6 +172,8 @@ class HourlyCamelsUSTO(camelsus.CamelsUS):
         #df['hourly_datetime'] = df.index
         #df.index = pd.to_datetime(df.index, frequency='H', utc=True)
         #df.index.freq = pd.infer_freq(df.index)
+
+
 
         return df
 

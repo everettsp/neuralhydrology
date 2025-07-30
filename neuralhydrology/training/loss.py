@@ -431,6 +431,34 @@ class MaskedUMALLoss(BaseLoss):
         result = -torch.mean(torch.sum(result, dim=1))
         return result
 
+class MaskedPILoss(BaseLoss):
+    """Mean squared error loss.
+
+    To use this loss in a forward pass, the passed `prediction` dict must contain
+    the key ``y_hat``, and the `data` dict must contain ``y``.
+
+    Parameters
+    ----------
+    cfg : Config
+        The run configuration.
+    """
+
+    def __init__(self, cfg: Config):
+        super(MaskedPILoss, self).__init__(cfg, prediction_keys=['y_hat'], ground_truth_keys=['y'])
+
+    def _get_loss(self, prediction: Dict[str, torch.Tensor], ground_truth: Dict[str, torch.Tensor], **kwargs):
+        mask = ~torch.isnan(ground_truth['y'])
+        mask[:, 0, :] = False  # first timestep is always masked out
+        
+        # Shift prediction['y_hat'] by one timestep along the sequence dimension
+        y_shifted = ground_truth['y'].clone()
+        y_shifted[:, 1:, :] = y_shifted[:, :-1, :]
+        y_shifted[:, 0, :] = float('nan')  # set first timestep to nan since it has no previous value
+
+        loss = 1 - ((ground_truth['y'][mask] - prediction['y_hat'][mask])**2) / ((ground_truth['y'][mask] - y_shifted[mask])**2)
+
+        # PI-loss is the MSE between prediction and previous timestep of ground truth
+        return loss
 
 def _get_predict_last_n(cfg: Config) -> dict:
     predict_last_n = cfg.predict_last_n
