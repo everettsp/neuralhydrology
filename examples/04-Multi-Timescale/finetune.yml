@@ -1,0 +1,25 @@
+# --- Experiment configurations --------------------------------------------------------------------
+
+# experiment name, used as folder name
+experiment_name: mts_finetune
+
+# files to specify training, validation and test basins (relative to code root or absolute path)
+train_basin_file: 1_basin.txt
+validation_basin_file: 1_basin.txt
+test_basin_file: 1_basin.txt
+
+# --- Training configuration -----------------------------------------------------------------------
+
+# specify learning rates to use starting at specific epochs (0 is the initial learning rate)
+learning_rate:
+    0: 5e-4
+    2: 5e-5	
+
+# Number of training epochs
+epochs: 10
+
+finetune_modules:
+- head
+- lstm
+
+base_run_dir: runs/test_run_3007_143046
