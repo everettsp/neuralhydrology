@@ -1,0 +1,104 @@
+allow_subsequent_nan_losses: 8
+batch_size: 256
+clip_gradient_norm: 1
+clip_targets_to_zero:
+- qobs_mm_per_hour
+commit_hash: 221d95d
+data_dir: F:\Data\LSH\CAMELS_US_TORONTO
+dataset: hourly_camels_usto
+device: cuda:0
+dynamic_inputs:
+  1D:
+  - total_precipitation
+  - temperature
+  - pressure
+  1h:
+  - total_precipitation
+  - temperature
+  - pressure
+epochs: 10
+experiment_name: mts_camels_augmented
+forcings:
+- nldas_hourly
+head: regression
+hidden_size: 128
+img_log_dir: 
+  c:\Users\everett\Documents\GitHub\neuralhydrology\examples\08_Toronto\runs\mts_camels_augmented_2008_003905\img_log
+initial_forget_bias: 3
+learning_rate:
+  0: 0.0005
+  2: 5e-05
+log_interval: 5
+log_n_figures: 8
+log_tensorboard: true
+loss: NSE
+metrics:
+- NSE
+- KGE
+- PI
+model: mtslstm
+num_workers: 12
+number_of_basins: 192
+optimizer: Adam
+output_activation: linear
+output_dropout: 0.4
+package_version: 1.12.0
+predict_last_n:
+  1D: 1
+  1h: 24
+regularization:
+- tie_frequencies
+run_dir: 
+  c:\Users\everett\Documents\GitHub\neuralhydrology\examples\08_Toronto\runs\mts_camels_augmented_2008_003905
+save_weights_every: 1
+seed: 937237
+seq_length:
+  1D: 365
+  1h: 120
+shared_mtslstm: false
+static_attributes:
+- frac_forest
+- high_q_freq
+- high_prec_dur
+- low_prec_freq
+- area_gages2
+- low_prec_dur
+- pet_mean
+- elev_mean
+- high_prec_freq
+- zero_q_freq
+- p_mean
+- gauge_lon
+- q_mean
+- q95
+- slope_mean
+- low_q_dur
+- runoff_ratio
+- frac_snow
+- q5
+- gauge_lat
+- aridity
+- p_seasonality
+- high_q_dur
+target_variables:
+- qobs_mm_per_hour
+test_basin_file: camus_basins.txt
+test_end_date: 01/01/2024
+test_start_date: 01/01/2020
+train_basin_file: camus_basins.txt
+train_dir: 
+  c:\Users\everett\Documents\GitHub\neuralhydrology\examples\08_Toronto\runs\mts_camels_augmented_2008_003905\train_data
+train_end_date: 01/01/2016
+train_start_date: 01/01/2008
+transfer_mtslstm_states:
+  h: linear
+  c: linear
+use_basin_id_encoding: false
+use_frequencies:
+- 1h
+- 1D
+validate_every: 1
+validate_n_random_basins: 8
+validation_basin_file: camus_basins.txt
+validation_end_date: 01/01/2020
+validation_start_date: 01/01/2016

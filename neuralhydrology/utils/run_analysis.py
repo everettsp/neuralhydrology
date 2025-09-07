@@ -3,9 +3,35 @@ import pandas as pd
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import warnings
+import pickle
+
 
 from neuralhydrology.utils.config import Config
+from neuralhydrology.evaluation import get_tester
 
+def eval_all_runs(runs: pd.DataFrame|Path) -> None:
+    if isinstance(runs, Path):
+        runs_df = load_runs_to_dataframe(runs)
+    elif isinstance(runs, pd.DataFrame):
+        runs_df = runs
+    else:
+        raise ValueError("Input must be a pandas DataFrame or a Path to a directory containing runs.")
+    
+    for run_dir in runs_df["run_dir"].unique():
+        run_dir = Path(run_dir)
+        run_config = Config(run_dir / "config.yml")
+        n_epochs = run_config.epochs
+        if (run_dir / f"model_epoch{n_epochs:03d}.pt").exists():
+            for period in ["train", "validation", "test"]:
+                if (run_dir / period).exists():
+                    print(f"skipping {run_dir} for period {period} as it already exists")
+                    continue
+                else:
+                    tester = get_tester(cfg=Config(run_dir / "config.yml"), run_dir=run_dir, period=period, init_model=True)
+                    tester.evaluate(save_results=True, metrics=run_config.metrics)
+        else:
+            print(f"skipping {run_dir} as model does not exist")
+            continue
 
 def load_runs_to_dataframe(run_directory: Path, 
                           config_patterns: List[str] = ["config.yml"],
@@ -268,3 +294,42 @@ def summarize_runs(df: pd.DataFrame) -> Dict[str, Any]:
                 continue
     
     return summary
+
+def purge_incomplete_runs(runs_dir: Path):
+    for run_dir in runs_dir.iterdir():
+        if not run_dir.is_dir():
+            continue
+        if not (run_dir / "model_epoch001.pt").exists():
+            print(f"Purging incomplete run directory: {run_dir}")
+            for item in run_dir.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    import shutil
+                    shutil.rmtree(item)
+            run_dir.rmdir()
+
+
+
+def load_results(run_dir:Path, epoch:int=-1, split:str="test"):
+    """
+    Load evaluation results for a specific run directory, epoch, and data split.
+    Args:
+        run_dir (Path): Path to the run directory containing model outputs.
+        epoch (int, optional): Epoch number to load results from. If -1, loads results from the last epoch as specified in the config file. Defaults to -1.
+        split (str, optional): Data split to load results for (e.g., "test", "val"). Defaults to "test".
+    Returns:
+        Any: Loaded results object from the specified epoch and split.
+    Raises:
+        ValueError: If the specified split folder does not exist in the run directory.
+    """
+
+    if not (run_dir / split).exists():
+        raise ValueError(f"Run directory {run_dir} does not contain a '{split}' folder, make sure to run eval_run.")
+    
+    if epoch == -1:
+        epoch = Config(run_dir / "config.yml").epochs
+
+    with open(run_dir / "test" / f"model_epoch{epoch:03d}" / "test_results.p", "rb") as f:
+        results = pickle.load(f)
+    return results

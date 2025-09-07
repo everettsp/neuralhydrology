@@ -95,6 +95,14 @@ class HourlyCamelsUSTO(camelsus.CamelsUS):
             
             df["pressure"] = df["pressure"] / 1000  # convert kPa to Pa
 
+
+            # Add lagged discharge columns if 'QObs(mm/d)' exists
+
+        if "camusto_ar6" in self.cfg.forcings:
+            lag = 6
+            if "qobs_mm_per_hour" in df.columns:
+                df[f"qobs_mm_per_hour_lag{lag}"] = df["qobs_mm_per_hour"].shift(lag)
+
         df.index.name = "date"
         
 

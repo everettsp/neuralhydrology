@@ -26,6 +26,7 @@ def load_timeseries(data_dir:Path, basin:str, forcing:str) -> pd.DataFrame:
     with xr.open_dataset(data_dir / f"{forcing.lower()}.nc") as ds:
         df = ds.sel(station=basin).to_dataframe().drop(columns=["station"]).copy()
         df.index.name = "date"
+        
     return df
 
 

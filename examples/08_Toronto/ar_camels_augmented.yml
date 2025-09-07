@@ -1,7 +1,7 @@
 # --- Experiment configurations --------------------------------------------------------------------
 
 # experiment name, used as folder name
-experiment_name: test_mts_camels_ar_64
+experiment_name: test_mts_camels_ar_128
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
 train_basin_file: 128_basin_list.txt

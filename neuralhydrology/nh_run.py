@@ -176,3 +176,7 @@ def eval_run(run_dir: Path, period: str, epoch: int = None, gpu: int = None):
 
 if __name__ == "__main__":
     _main()
+
+# To continue training, use the CLI:
+# python neuralhydrology/nh_run.py continue_training --run-dir <path_to_run_dir> [--config-file <new_config.yml>] [--gpu <gpu_id>]
+# Or call continue_run(run_dir, config_file, gpu) from Python.

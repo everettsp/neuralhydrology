@@ -1,0 +1,19 @@
+base_run_dir: 
+  C:\Users\everett\Documents\GitHub\neuralhydrology\examples\09_CreditRiver\runs\hysets_2608_014357
+epochs: 8
+experiment_name: cvc_finetune_04
+finetune_modules:
+- head
+- lstm
+learning_rate:
+  0: 0.0005
+  2: 5e-05
+test_basin_file: cvc_basins.txt
+test_end_date: 30/09/2018
+test_start_date: 01/10/2014
+train_basin_file: cvc_basins.txt
+train_end_date: 30/09/2010
+train_start_date: 01/10/2006
+validation_basin_file: cvc_basins.txt
+validation_end_date: 30/09/2014
+validation_start_date: 01/10/2010

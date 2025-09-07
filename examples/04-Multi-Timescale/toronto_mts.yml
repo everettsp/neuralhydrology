@@ -10,9 +10,9 @@ use_frequencies:
   - 1D
 
 # files to specify training, validation and test basins (relative to code root or absolute path)
-train_basin_file: all_basins_trca.txt
-validation_basin_file: all_basins_trca.txt
-test_basin_file: all_basins_trca.txt
+train_basin_file: 516-camels-basins.txt
+validation_basin_file: 516-camels-basins.txt
+test_basin_file: 516-camels-basins.txt
 
 # training, validation and test time periods (format = 'dd/mm/yyyy')
 train_start_date: "01/01/2008"
