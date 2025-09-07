@@ -4,6 +4,7 @@ from neuralhydrology.datasetzoo.basedataset import BaseDataset
 from neuralhydrology.datasetzoo.camelsaus import CamelsAUS
 from neuralhydrology.datasetzoo.camelsbr import CamelsBR
 from neuralhydrology.datasetzoo.camelscl import CamelsCL
+from neuralhydrology.datasetzoo.camelsde import CamelsDE
 from neuralhydrology.datasetzoo.camelsgb import CamelsGB
 from neuralhydrology.datasetzoo.camelsus import CamelsUS
 from neuralhydrology.datasetzoo.caravan import Caravan
@@ -11,6 +12,7 @@ from neuralhydrology.datasetzoo.hysets import Hysets
 from neuralhydrology.datasetzoo.camusto import CamusTO
 from neuralhydrology.datasetzoo.hourlycamelsusto import HourlyCamelsUSTO
 
+from neuralhydrology.datasetzoo.camelsind import CamelsIND
 from neuralhydrology.datasetzoo.genericdataset import GenericDataset
 from neuralhydrology.datasetzoo.hourlycamelsus import HourlyCamelsUS
 from neuralhydrology.datasetzoo.lamah import LamaH
@@ -27,9 +29,9 @@ def get_dataset(cfg: Config,
                 scaler: dict = {}) -> BaseDataset:
     """Get data set instance, depending on the run configuration.
 
-    Currently implemented datasets are 'caravan', 'camels_aus', 'camels_br', 'camels_cl', 'camels_gb', 'camels_us', and
-    'hourly_camels_us', as well as the 'generic' dataset class that can be used for any kind of dataset as long as it is
-    in the correct format.
+    Currently implemented datasets are 'caravan', 'camels_aus', 'camels_br', 'camels_cl', 'camels_de', 'camels_gb',
+    'camels_us' and 'hourly_camels_us'. The 'generic' dataset class can be used for any kind of dataset as long as
+    it is in the correct format.
 
     New dataset classes can be added at the beginning of runtime using the function register_dataset().
 
@@ -115,4 +117,7 @@ _datasetZooRegistry.register_dataset_class("caravan", Caravan)
 _datasetZooRegistry.register_dataset_class("hysets", Hysets)
 _datasetZooRegistry.register_dataset_class("camusto", CamusTO)
 _datasetZooRegistry.register_dataset_class("hourly_camels_usto", HourlyCamelsUSTO)
+
+_datasetZooRegistry.register_dataset_class("camels_ind", CamelsIND)
+_datasetZooRegistry.register_dataset_class("camels_de", CamelsDE)
 
