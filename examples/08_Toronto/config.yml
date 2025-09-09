@@ -16,7 +16,7 @@ dynamic_inputs:
   - total_precipitation
   - temperature
   - pressure
-epochs: 10
+epochs: 64
 experiment_name: mts_camels_augmented
 forcings:
 - nldas_hourly
@@ -27,7 +27,7 @@ img_log_dir:
 initial_forget_bias: 3
 learning_rate:
   0: 0.0005
-  2: 5e-05
+  4: 5e-05
 log_interval: 5
 log_n_figures: 8
 log_tensorboard: true

@@ -91,6 +91,7 @@ import geopandas as gpd
 def load_hysets_boundaries(data_dir: Path) -> gpd.GeoDataFrame:
     boundaries = gpd.read_file(data_dir / "HYSETS_watershed_boundaries.zip!HYSETS_watershed_boundaries_20200730.shp")
     boundaries = boundaries.set_index("OfficialID", drop=False)
+    boundaries.set_crs(epsg=4326, allow_override=True, inplace=True)
     #boundaries["geometry"] = gpd.GeoSeries.from_wkt(boundaries["geometry"])
     attributes = load_hysets_attributes(data_dir=data_dir)
     basins = gpd.GeoDataFrame(boundaries.join(attributes, how="inner"))
